@@ -1,0 +1,13 @@
+[package]
+name = "coreml-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { version = "1", features = ["backtrace"] }
+half = { version = "2.4.1", features = ["serde", "zerocopy"] }
+ndarray = { version = "0.16.1", features = ["serde", "blas"] }
+swift-bridge = "0.1"
+
+[build-dependencies]
+swift-bridge-build = "0.1"
