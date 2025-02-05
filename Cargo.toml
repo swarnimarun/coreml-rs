@@ -2,6 +2,8 @@
 name = "coreml-rs"
 version = "0.1.0"
 edition = "2021"
+description = "CoreML bindings for Rust using swift-bridge to maximize performance"
+license-file = "LICENSE"
 
 [dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
