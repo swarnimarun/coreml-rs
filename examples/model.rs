@@ -6,7 +6,7 @@ pub fn main() {
     let mut m = model_load_and_compile(&s);
     let time = std::time::Instant::now();
     let idx = s.insert(Array::zeros((1, 3, 512, 512)));
-    m.add_input("img", s.bind_ref(idx));
+    m.add_input_f32("img", s.bind_ref(idx));
     let p = time.elapsed();
     println!("create and add input {} ms", p.as_millis());
     let time = std::time::Instant::now();

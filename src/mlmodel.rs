@@ -5,6 +5,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use half::f16;
+
 use crate::{
     ffi::{Model, ModelOutput},
     mlarray::MLArray,
@@ -41,7 +43,7 @@ impl Store {
 pub struct CoreMLInputRef<'a>(usize, &'a Store);
 
 impl<'a> CoreMLInputRef<'a> {
-    pub fn input_data(&self) -> Option<(Vec<i32>, Vec<f32>)> {
+    pub fn input_data_f32(&self) -> Option<(Vec<i32>, Vec<f32>)> {
         let Ok(v) = self.1.get(self.0) else {
             return None;
         };
@@ -50,7 +52,19 @@ impl<'a> CoreMLInputRef<'a> {
         };
         Some((
             v.shape().into_iter().map(|s| *s as i32).collect(),
-            v.clone().into_raw_vec(),
+            v.clone().into_raw_vec_f32(),
+        ))
+    }
+    pub fn input_data_f16(&self) -> Option<(Vec<i32>, Vec<f16>)> {
+        let Ok(v) = self.1.get(self.0) else {
+            return None;
+        };
+        let Some(v) = v.get(self.0) else {
+            return None;
+        };
+        Some((
+            v.shape().into_iter().map(|s| *s as i32).collect(),
+            v.clone().into_raw_vec_f16(),
         ))
     }
 }
@@ -70,16 +84,30 @@ impl<'a> CoreMLModel<'a> {
         }
     }
 
-    pub fn add_input(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
+    pub fn add_input_f32(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
         debug_assert!(
             self.model.is_some(),
             "ensure model is compiled & loaded; before adding inputs"
         );
-        let Some((shape, data)) = input.input_data() else {
+        let Some((shape, data)) = input.input_data_f32() else {
             panic!("welp")
         };
         let name = tag.as_ref().to_string();
         self.model.as_mut().unwrap().bindInput(shape, name, data);
+    }
+
+    pub fn add_input_f16(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
+        debug_assert!(
+            self.model.is_some(),
+            "ensure model is compiled & loaded; before adding inputs"
+        );
+        let Some((shape, data)) = input.input_data_f16() else {
+            panic!("welp")
+        };
+        let name = tag.as_ref().to_string();
+        todo!("unimplemented")
+        // TODO SA: fix f16
+        // self.model.as_mut().unwrap().bindInput(shape, name, data);
     }
 
     pub fn compile(&mut self) {
