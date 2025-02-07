@@ -1,4 +1,4 @@
-use half::f16;
+use half::{f16, vec::HalfFloatVecExt};
 use ndarray::{Array2, Array3, Array4, Array5, Array6};
 
 #[derive(Clone, Debug)]
@@ -57,13 +57,23 @@ impl MLArray {
             }
         }
     }
-    pub fn into_raw_vec_f16(&self) -> Vec<f16> {
+    pub fn into_raw_vec_u16(&self) -> Vec<u16> {
         match self {
-            MLArray::Float16Array(Float16MLArray::Array2(ab)) => ab.clone().into_raw_vec(),
-            MLArray::Float16Array(Float16MLArray::Array3(ab)) => ab.clone().into_raw_vec(),
-            MLArray::Float16Array(Float16MLArray::Array4(ab)) => ab.clone().into_raw_vec(),
-            MLArray::Float16Array(Float16MLArray::Array5(ab)) => ab.clone().into_raw_vec(),
-            MLArray::Float16Array(Float16MLArray::Array6(ab)) => ab.clone().into_raw_vec(),
+            MLArray::Float16Array(Float16MLArray::Array2(ab)) => {
+                (ab.as_slice().unwrap()).to_vec().reinterpret_into()
+            }
+            MLArray::Float16Array(Float16MLArray::Array3(ab)) => {
+                (ab.as_slice().unwrap()).to_vec().reinterpret_into()
+            }
+            MLArray::Float16Array(Float16MLArray::Array4(ab)) => {
+                (ab.as_slice().unwrap()).to_vec().reinterpret_into()
+            }
+            MLArray::Float16Array(Float16MLArray::Array5(ab)) => {
+                (ab.as_slice().unwrap()).to_vec().reinterpret_into()
+            }
+            MLArray::Float16Array(Float16MLArray::Array6(ab)) => {
+                (ab.as_slice().unwrap()).to_vec().reinterpret_into()
+            }
             _ => {
                 panic!("f16 not supported")
             }

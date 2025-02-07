@@ -7,7 +7,8 @@ license-file = "LICENSE"
 
 [dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
-half = { version = "2.4.1", features = ["serde", "zerocopy"] }
+bytemuck = "1.21.0"
+half = { version = "2.4.1", features = ["alloc", "serde", "zerocopy"] }
 ndarray = { version = "0.16.1", features = ["serde", "blas"] }
 swift-bridge = "0.1"
 

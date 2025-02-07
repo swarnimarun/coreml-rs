@@ -5,8 +5,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use half::f16;
-
 use crate::{
     ffi::{Model, ModelOutput},
     mlarray::MLArray,
@@ -31,7 +29,6 @@ impl Store {
     }
     pub fn get(
         &self,
-        idx: usize,
     ) -> Result<
         std::sync::MutexGuard<'_, Vec<MLArray>>,
         std::sync::PoisonError<std::sync::MutexGuard<'_, Vec<MLArray>>>,
@@ -44,7 +41,7 @@ pub struct CoreMLInputRef<'a>(usize, &'a Store);
 
 impl<'a> CoreMLInputRef<'a> {
     pub fn input_data_f32(&self) -> Option<(Vec<i32>, Vec<f32>)> {
-        let Ok(v) = self.1.get(self.0) else {
+        let Ok(v) = self.1.get() else {
             return None;
         };
         let Some(v) = v.get(self.0) else {
@@ -55,8 +52,8 @@ impl<'a> CoreMLInputRef<'a> {
             v.clone().into_raw_vec_f32(),
         ))
     }
-    pub fn input_data_f16(&self) -> Option<(Vec<i32>, Vec<f16>)> {
-        let Ok(v) = self.1.get(self.0) else {
+    pub fn input_data_f16(&self) -> Option<(Vec<i32>, Vec<u16>)> {
+        let Ok(v) = self.1.get() else {
             return None;
         };
         let Some(v) = v.get(self.0) else {
@@ -64,7 +61,19 @@ impl<'a> CoreMLInputRef<'a> {
         };
         Some((
             v.shape().into_iter().map(|s| *s as i32).collect(),
-            v.clone().into_raw_vec_f16(),
+            v.clone().into_raw_vec_u16(),
+        ))
+    }
+    pub fn input_data_i32(&self) -> Option<(Vec<i32>, Vec<i32>)> {
+        let Ok(v) = self.1.get() else {
+            return None;
+        };
+        let Some(v) = v.get(self.0) else {
+            return None;
+        };
+        Some((
+            v.shape().into_iter().map(|s| *s as i32).collect(),
+            v.clone().into_raw_vec_i32(),
         ))
     }
 }
@@ -84,16 +93,28 @@ impl<'a> CoreMLModel<'a> {
         }
     }
 
+    pub fn add_input_i32(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
+        debug_assert!(
+            self.model.is_some(),
+            "ensure model is compiled & loaded; before adding inputs"
+        );
+        let Some((shape, data)) = input.input_data_i32() else {
+            panic!("i32 welp")
+        };
+        let name = tag.as_ref().to_string();
+        self.model.as_mut().unwrap().bindInputI32(shape, name, data);
+    }
+
     pub fn add_input_f32(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
         debug_assert!(
             self.model.is_some(),
             "ensure model is compiled & loaded; before adding inputs"
         );
         let Some((shape, data)) = input.input_data_f32() else {
-            panic!("welp")
+            panic!("f32 welp")
         };
         let name = tag.as_ref().to_string();
-        self.model.as_mut().unwrap().bindInput(shape, name, data);
+        self.model.as_mut().unwrap().bindInputF32(shape, name, data);
     }
 
     pub fn add_input_f16(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
@@ -102,12 +123,10 @@ impl<'a> CoreMLModel<'a> {
             "ensure model is compiled & loaded; before adding inputs"
         );
         let Some((shape, data)) = input.input_data_f16() else {
-            panic!("welp")
+            panic!("f16 welp")
         };
         let name = tag.as_ref().to_string();
-        todo!("unimplemented")
-        // TODO SA: fix f16
-        // self.model.as_mut().unwrap().bindInput(shape, name, data);
+        self.model.as_mut().unwrap().bindInputF16(shape, name, data);
     }
 
     pub fn compile(&mut self) {

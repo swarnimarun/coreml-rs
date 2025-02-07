@@ -36,13 +36,33 @@ class ModelOutput {
 		}
 		return ret
 	}
-	func bytesFrom(name: RustString) -> RustVec<Float32> {
+	func outputF32(name: RustString) -> RustVec<Float32> {
 		let output = self.output!.featureValue(for: name.toString())!.multiArrayValue!
 		let l = output.count
 		var v = RustVec<Float32>()
 		output.withUnsafeMutableBytes { ptr, strides in
 			let p = ptr.baseAddress!.assumingMemoryBound(to: Float32.self)
-			v = rust_vec_from_ptr(p, UInt(l))
+			v = rust_vec_from_ptr_f32(p, UInt(l))
+		}
+		return v
+	}
+	func outputI32(name: RustString) -> RustVec<Int32> {
+		let output = self.output!.featureValue(for: name.toString())!.multiArrayValue!
+		let l = output.count
+		var v = RustVec<Int32>()
+		output.withUnsafeMutableBytes { ptr, strides in
+			let p = ptr.baseAddress!.assumingMemoryBound(to: Int32.self)
+			v = rust_vec_from_ptr_i32(p, UInt(l))
+		}
+		return v
+	}
+	func outputF16(name: RustString) -> RustVec<UInt16> {
+		let output = self.output!.featureValue(for: name.toString())!.multiArrayValue!
+		let l = output.count
+		var v = RustVec<UInt16>()
+		output.withUnsafeMutableBytes { ptr, strides in
+			let p = ptr.baseAddress!.assumingMemoryBound(to: UInt16.self)
+			v = rust_vec_from_ptr_u16(p, UInt(l))
 		}
 		return v
 	}
@@ -80,7 +100,7 @@ class Model {
 		}
 	}
 
-	func bindInput(shape: RustVec<Int32>, featureName: RustString, data: RustVec<Float32>) {
+	func bindInputF32(shape: RustVec<Int32>, featureName: RustString, data: RustVec<Float32>) {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -100,6 +120,47 @@ class Model {
 		} catch {
 			print("Unexpected error; \(error)")
 		}
-
+	}
+	func bindInputI32(shape: RustVec<Int32>, featureName: RustString, data: RustVec<Int32>) {
+		do {
+			var arr: [NSNumber] = []
+			var stride: [NSNumber] = []
+			var m: Int32 = 1
+			for i in shape.reversed() {
+				stride.append(NSNumber(value: m))
+				m = i * m
+			}
+			stride.reverse()
+			for s in shape {
+				arr.append(NSNumber(value: s))
+			}
+			// let array = try MLMultiArray.init(dataPointer: shape.ptr, shape: arr, dataType: MLMultiArrayDataType.float32, strides: stride)
+			let array = try MLMultiArray.init(shape: arr, dataType: MLMultiArrayDataType.int32)
+			let value = MLFeatureValue(multiArray: array)
+			self.dict[featureName.toString()] = value
+		} catch {
+			print("Unexpected error; \(error)")
+		}
+	}
+	func bindInputF16(shape: RustVec<Int32>, featureName: RustString, data: RustVec<UInt16>) {
+		do {
+			var arr: [NSNumber] = []
+			var stride: [NSNumber] = []
+			var m: Int32 = 1
+			for i in shape.reversed() {
+				stride.append(NSNumber(value: m))
+				m = i * m
+			}
+			stride.reverse()
+			for s in shape {
+				arr.append(NSNumber(value: s))
+			}
+			let array = try MLMultiArray.init(dataPointer: shape.ptr, shape: arr, dataType: MLMultiArrayDataType.float16, strides: stride)
+			// let array = try MLMultiArray.init(shape: arr, dataType: MLMultiArrayDataType.float16)
+			let value = MLFeatureValue(multiArray: array)
+			self.dict[featureName.toString()] = value
+		} catch {
+			print("Unexpected error; \(error)")
+		}
 	}
 }
