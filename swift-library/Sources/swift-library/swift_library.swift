@@ -100,7 +100,7 @@ class Model {
 		}
 	}
 
-	func bindInputF32(shape: RustVec<Int32>, featureName: RustString, data: RustVec<Float32>) {
+	func bindInputF32(shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Float32>) {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -113,8 +113,7 @@ class Model {
 			for s in shape {
 				arr.append(NSNumber(value: s))
 			}
-			// let array = try MLMultiArray.init(dataPointer: shape.ptr, shape: arr, dataType: MLMultiArrayDataType.float32, strides: stride)
-			let array = try MLMultiArray.init(shape: arr, dataType: MLMultiArrayDataType.float32)
+			let array = try MLMultiArray.init(dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32, strides: stride)
 			let value = MLFeatureValue(multiArray: array)
 			self.dict[featureName.toString()] = value
 		} catch {

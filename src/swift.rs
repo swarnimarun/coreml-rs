@@ -11,7 +11,7 @@ pub mod swift {
 
         #[swift_bridge(init)]
         fn compileModel(path: String) -> Model;
-        fn bindInputF32(&self, shape: Vec<i32>, featureName: String, data: Vec<f32>);
+        fn bindInputF32(&self, shape: Vec<i32>, featureName: String, data: *mut f32);
         fn bindInputI32(&self, shape: Vec<i32>, featureName: String, data: Vec<i32>);
         fn bindInputF16(&self, shape: Vec<i32>, featureName: String, data: Vec<u16>);
         #[swift_bridge(swift_name = "load")]

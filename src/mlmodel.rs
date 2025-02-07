@@ -98,11 +98,12 @@ impl<'a> CoreMLModel<'a> {
             self.model.is_some(),
             "ensure model is compiled & loaded; before adding inputs"
         );
-        let Some((shape, data)) = input.input_data_i32() else {
+        let Some((shape, mut data)) = input.input_data_i32() else {
             panic!("i32 welp")
         };
         let name = tag.as_ref().to_string();
         self.model.as_mut().unwrap().bindInputI32(shape, name, data);
+        // std::mem::forget(data);
     }
 
     pub fn add_input_f32(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
@@ -110,11 +111,14 @@ impl<'a> CoreMLModel<'a> {
             self.model.is_some(),
             "ensure model is compiled & loaded; before adding inputs"
         );
-        let Some((shape, data)) = input.input_data_f32() else {
+        let Some((shape, mut data)) = input.input_data_f32() else {
             panic!("f32 welp")
         };
         let name = tag.as_ref().to_string();
-        self.model.as_mut().unwrap().bindInputF32(shape, name, data);
+        self.model
+            .as_mut()
+            .unwrap()
+            .bindInputF32(shape, name, data.as_mut_ptr());
     }
 
     pub fn add_input_f16(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
@@ -122,11 +126,12 @@ impl<'a> CoreMLModel<'a> {
             self.model.is_some(),
             "ensure model is compiled & loaded; before adding inputs"
         );
-        let Some((shape, data)) = input.input_data_f16() else {
+        let Some((shape, mut data)) = input.input_data_f16() else {
             panic!("f16 welp")
         };
         let name = tag.as_ref().to_string();
         self.model.as_mut().unwrap().bindInputF16(shape, name, data);
+        // std::mem::forget(data);
     }
 
     pub fn compile(&mut self) {
