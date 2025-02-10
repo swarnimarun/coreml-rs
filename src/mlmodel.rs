@@ -41,39 +41,33 @@ pub struct CoreMLInputRef<'a>(usize, &'a Store);
 
 impl<'a> CoreMLInputRef<'a> {
     pub fn input_data_f32(&self) -> Option<(Vec<i32>, Vec<f32>)> {
-        let Ok(v) = self.1.get() else {
+        let Ok(mut v) = self.1.get() else {
             return None;
         };
-        let Some(v) = v.get(self.0) else {
-            return None;
-        };
+        let v = v.remove(self.0);
         Some((
             v.shape().into_iter().map(|s| *s as i32).collect(),
-            v.clone().into_raw_vec_f32(),
+            v.into_raw_vec_f32(),
         ))
     }
     pub fn input_data_f16(&self) -> Option<(Vec<i32>, Vec<u16>)> {
-        let Ok(v) = self.1.get() else {
+        let Ok(mut v) = self.1.get() else {
             return None;
         };
-        let Some(v) = v.get(self.0) else {
-            return None;
-        };
+        let v = v.remove(self.0);
         Some((
             v.shape().into_iter().map(|s| *s as i32).collect(),
-            v.clone().into_raw_vec_u16(),
+            v.into_raw_vec_u16(),
         ))
     }
     pub fn input_data_i32(&self) -> Option<(Vec<i32>, Vec<i32>)> {
-        let Ok(v) = self.1.get() else {
+        let Ok(mut v) = self.1.get() else {
             return None;
         };
-        let Some(v) = v.get(self.0) else {
-            return None;
-        };
+        let v = v.remove(self.0);
         Some((
             v.shape().into_iter().map(|s| *s as i32).collect(),
-            v.clone().into_raw_vec_i32(),
+            v.into_raw_vec_i32(),
         ))
     }
 }

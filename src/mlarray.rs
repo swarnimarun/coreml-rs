@@ -45,13 +45,13 @@ impl MLArray {
     pub fn is_i32(&self) -> bool {
         matches!(self, MLArray::Int32Array(_))
     }
-    pub fn into_raw_vec_f32(&self) -> Vec<f32> {
+    pub fn into_raw_vec_f32(self) -> Vec<f32> {
         match self {
-            MLArray::FloatArray(FloatMLArray::Array2(ab)) => ab.clone().into_raw_vec(),
-            MLArray::FloatArray(FloatMLArray::Array3(ab)) => ab.clone().into_raw_vec(),
-            MLArray::FloatArray(FloatMLArray::Array4(ab)) => ab.clone().into_raw_vec(),
-            MLArray::FloatArray(FloatMLArray::Array5(ab)) => ab.clone().into_raw_vec(),
-            MLArray::FloatArray(FloatMLArray::Array6(ab)) => ab.clone().into_raw_vec(),
+            MLArray::FloatArray(FloatMLArray::Array2(ab)) => ab.into_raw_vec(),
+            MLArray::FloatArray(FloatMLArray::Array3(ab)) => ab.into_raw_vec(),
+            MLArray::FloatArray(FloatMLArray::Array4(ab)) => ab.into_raw_vec(),
+            MLArray::FloatArray(FloatMLArray::Array5(ab)) => ab.into_raw_vec(),
+            MLArray::FloatArray(FloatMLArray::Array6(ab)) => ab.into_raw_vec(),
             _ => {
                 panic!("f32 not supported")
             }
@@ -79,13 +79,13 @@ impl MLArray {
             }
         }
     }
-    pub fn into_raw_vec_i32(&self) -> Vec<i32> {
+    pub fn into_raw_vec_i32(self) -> Vec<i32> {
         match self {
-            MLArray::Int32Array(Int32MLArray::Array2(ab)) => ab.clone().into_raw_vec(),
-            MLArray::Int32Array(Int32MLArray::Array3(ab)) => ab.clone().into_raw_vec(),
-            MLArray::Int32Array(Int32MLArray::Array4(ab)) => ab.clone().into_raw_vec(),
-            MLArray::Int32Array(Int32MLArray::Array5(ab)) => ab.clone().into_raw_vec(),
-            MLArray::Int32Array(Int32MLArray::Array6(ab)) => ab.clone().into_raw_vec(),
+            MLArray::Int32Array(Int32MLArray::Array2(ab)) => ab.into_raw_vec(),
+            MLArray::Int32Array(Int32MLArray::Array3(ab)) => ab.into_raw_vec(),
+            MLArray::Int32Array(Int32MLArray::Array4(ab)) => ab.into_raw_vec(),
+            MLArray::Int32Array(Int32MLArray::Array5(ab)) => ab.into_raw_vec(),
+            MLArray::Int32Array(Int32MLArray::Array6(ab)) => ab.into_raw_vec(),
             _ => {
                 panic!("i32 not supported")
             }
