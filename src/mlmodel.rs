@@ -118,7 +118,8 @@ impl<'a> CoreMLModel<'a> {
         self.model
             .as_mut()
             .unwrap()
-            .bindInputF32(shape, name, data.as_mut_ptr());
+            .bindInputF32(shape, name, data.as_mut_ptr(), data.capacity());
+        std::mem::forget(data);
     }
 
     pub fn add_input_f16(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
