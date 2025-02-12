@@ -189,3 +189,41 @@ impl From<Array6<f16>> for MLArray {
         MLArray::Float16Array(Float16MLArray::Array6(value))
     }
 }
+
+pub fn mean_absolute_error_bytes<
+    T: core::ops::Sub<Output = T>
+        + PartialOrd
+        + Copy
+        + core::ops::Add<Output = T>
+        + num::cast::AsPrimitive<f64>
+        + bytemuck::Pod
+        + core::fmt::Debug,
+>(
+    lhs: &[u8],
+    rhs: &[u8],
+) -> f64 {
+    let lhs = bytemuck::cast_slice(lhs);
+    let rhs = bytemuck::cast_slice(rhs);
+
+    assert_eq!(lhs.len(), rhs.len(), "lhs and rhs have different lengths");
+    mean_absolute_error::<T>(lhs, rhs)
+}
+
+pub fn mean_absolute_error<
+    T: core::ops::Sub<Output = T>
+        + PartialOrd
+        + Copy
+        + core::ops::Add<Output = T>
+        + num::cast::AsPrimitive<f64>,
+>(
+    lhs: impl AsRef<[T]>,
+    rhs: impl AsRef<[T]>,
+) -> f64 {
+    let (sum, count) = lhs
+        .as_ref()
+        .iter()
+        .zip(rhs.as_ref())
+        .map(|(&l, &r)| if l > r { l - r } else { r - l })
+        .fold((0f64, 0usize), |(acc, count), x| (acc + x.as_(), count + 1));
+    sum / count as f64
+}

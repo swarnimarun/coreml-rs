@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    ffi::{Model, ModelOutput},
+    ffi::{ComputePlatform, Model, ModelOutput},
     mlarray::MLArray,
 };
 
@@ -72,18 +72,25 @@ impl<'a> CoreMLInputRef<'a> {
     }
 }
 
+#[derive(Default)]
+pub struct CoreMLModelOptions {
+    pub compute_platform: ComputePlatform,
+}
+
 pub struct CoreMLModel<'a> {
     model: Option<Model>,
     path: PathBuf,
+    opts: CoreMLModelOptions,
     _p: PhantomData<CoreMLInputRef<'a>>,
 }
 
 impl<'a> CoreMLModel<'a> {
-    pub fn new(path: impl AsRef<Path>, _: &'a Store) -> Self {
+    pub fn new(path: impl AsRef<Path>, _: &'a Store, opts: CoreMLModelOptions) -> Self {
         Self {
             model: None,
             path: path.as_ref().to_path_buf(),
             _p: PhantomData::default(),
+            opts,
         }
     }
 
@@ -96,8 +103,11 @@ impl<'a> CoreMLModel<'a> {
             panic!("i32 welp")
         };
         let name = tag.as_ref().to_string();
-        self.model.as_mut().unwrap().bindInputI32(shape, name, data);
-        // std::mem::forget(data);
+        self.model
+            .as_mut()
+            .unwrap()
+            .bindInputI32(shape, name, data.as_mut_ptr(), data.capacity());
+        std::mem::forget(data);
     }
 
     pub fn add_input_f32(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
@@ -125,12 +135,36 @@ impl<'a> CoreMLModel<'a> {
             panic!("f16 welp")
         };
         let name = tag.as_ref().to_string();
-        self.model.as_mut().unwrap().bindInputF16(shape, name, data);
-        // std::mem::forget(data);
+        self.model
+            .as_mut()
+            .unwrap()
+            .bindInputU16(shape, name, data.as_mut_ptr(), data.capacity());
+        std::mem::forget(data);
     }
 
     pub fn compile(&mut self) {
-        self.model = Some(Model::compileModel(self.path.display().to_string()));
+        self.model = Some(Model::compileModel(
+            self.path.display().to_string(),
+            self.opts.compute_platform,
+        ));
+    }
+
+    pub fn add_output_f32(&mut self, tag: impl AsRef<str>, out: impl Into<MLArray>) {
+        debug_assert!(
+            self.model.is_some(),
+            "ensure model is compiled & loaded; before adding inputs"
+        );
+        let arr: MLArray = out.into();
+        let shape = arr.shape().into_iter().map(|i| *i as i32).collect();
+        let mut data = arr.into_raw_vec_f32();
+        let name = tag.as_ref().to_string();
+        let ptr = data.as_mut_ptr();
+        let len = data.capacity();
+        self.model
+            .as_mut()
+            .unwrap()
+            .bindOutputF32(shape, name, ptr, len);
+        std::mem::forget(data);
     }
 
     pub fn predict(&mut self) -> Option<ModelOutput> {

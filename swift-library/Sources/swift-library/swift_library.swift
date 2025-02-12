@@ -24,20 +24,20 @@ class ModelDescription {
 }
 
 class ModelOutput {
-	var output: MLFeatureProvider? = nil
-	init(output: MLFeatureProvider?) {
+	var output: [String: Any] = [:]
+	init(output: [String: Any]) {
 		self.output = output
 	}
 	func outputDescription() -> RustVec<RustString> {
 		let ret = RustVec<RustString>()
-		for key in self.output!.featureNames {
-			let str = "\(key):\(self.output!.featureValue(for: key)!)".intoRustString()
+		for key in self.output.keys {
+			let str = "\(key):\(self.output[key]!)".intoRustString()
 			ret.push(value: str)
 		}
 		return ret
 	}
 	func outputF32(name: RustString) -> RustVec<Float32> {
-		let output = self.output!.featureValue(for: name.toString())!.multiArrayValue!
+		let output = (self.output[name.toString()]! as? MLMultiArray)!
 		let l = output.count
 		var v = RustVec<Float32>()
 		output.withUnsafeMutableBytes { ptr, strides in
@@ -47,7 +47,7 @@ class ModelOutput {
 		return v
 	}
 	func outputI32(name: RustString) -> RustVec<Int32> {
-		let output = self.output!.featureValue(for: name.toString())!.multiArrayValue!
+		let output = (self.output[name.toString()]! as? MLMultiArray)!
 		let l = output.count
 		var v = RustVec<Int32>()
 		output.withUnsafeMutableBytes { ptr, strides in
@@ -56,8 +56,8 @@ class ModelOutput {
 		}
 		return v
 	}
-	func outputF16(name: RustString) -> RustVec<UInt16> {
-		let output = self.output!.featureValue(for: name.toString())!.multiArrayValue!
+	func outputU16(name: RustString) -> RustVec<UInt16> {
+		let output = (self.output[name.toString()]! as? MLMultiArray)!
 		let l = output.count
 		var v = RustVec<UInt16>()
 		output.withUnsafeMutableBytes { ptr, strides in
@@ -73,15 +73,29 @@ class Model {
 	var model: MLModel? = nil
 	var dict: [String: Any] = [:]
 	var inputs: MLDictionaryFeatureProvider? = nil
+	var outputs: [String: Any] = [:]
+	var computeUnits: MLComputeUnits = .cpuAndNeuralEngine
 
-	init(path: RustString) {
+	init(path: RustString, compute: ComputePlatform) {
+		switch compute {
+		case .Cpu:
+			self.computeUnits = .cpuOnly
+			break
+		case .CpuAndANE:
+			self.computeUnits = .cpuAndNeuralEngine
+			break
+		case .CpuAndGpu:
+			self.computeUnits = .cpuAndGPU
+			break
+		}
 		let url = URL(string: path.toString())!
 		self.compiledPath = try! MLModel.compileModel(at: url)
 	}
 
 	func load() {
-		let loadedModel = try! MLModel(
-			contentsOf: self.compiledPath!, configuration: MLModelConfiguration.init())
+		let config = MLModelConfiguration.init()
+		config.computeUnits = self.computeUnits
+		let loadedModel = try! MLModel(contentsOf: self.compiledPath!, configuration: config)
 		self.model = loadedModel
 	}
 
@@ -89,18 +103,51 @@ class Model {
 		return ModelDescription(desc: self.model!.modelDescription)
 	}
 
-	func predict() -> ModelOutput {
+	func bindOutputF32(
+		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
+		len: UInt
+	) {
 		do {
-			self.inputs = try MLDictionaryFeatureProvider.init(dictionary: self.dict)
-			let res = try self.model!.prediction(from: self.inputs!)
-			return ModelOutput(output: res)
+			var arr: [NSNumber] = []
+			var stride: [NSNumber] = []
+			var m: Int32 = 1
+			for i in shape.reversed() {
+				stride.append(NSNumber(value: m))
+				m = i * m
+			}
+			stride.reverse()
+			for s in shape {
+				arr.append(NSNumber(value: s))
+			}
+			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) in
+				()
+			}
+			let array = try MLMultiArray.init(
+				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
+				strides: stride, deallocator: deallocMultiArrayRust)
+			self.outputs[featureName.toString()] = array
 		} catch {
-			print("Unexpected error: \(error)")
-			return ModelOutput(output: nil)
+			print("Unexpected error; \(error)")
 		}
 	}
 
-	func bindInputF32(shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Float32>, len: UInt) {
+	func predict() -> ModelOutput {
+		do {
+			self.inputs = try MLDictionaryFeatureProvider.init(dictionary: self.dict)
+			let opts = MLPredictionOptions.init()
+			opts.outputBackings = self.outputs
+			try self.model!.prediction(from: self.inputs!, options: opts)
+			return ModelOutput(output: self.outputs)
+		} catch {
+			print("Unexpected error: \(error)")
+			return ModelOutput(output: self.outputs)
+		}
+	}
+
+	func bindInputF32(
+		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
+		len: UInt
+	) {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -113,19 +160,22 @@ class Model {
 			for s in shape {
 				arr.append(NSNumber(value: s))
 			}
-			let deallocMultiArrayRust = {(_ ptr: UnsafeMutableRawPointer) -> Void in
-				let p = ptr.assumingMemoryBound(to: Float32.self)
-				rust_vec_free_f32(p, len)
-				return ()
+			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) in
+				rust_vec_free_f32(ptr.assumingMemoryBound(to: Float32.self), len)
 			}
-			let array = try MLMultiArray.init(dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32, strides: stride, deallocator: deallocMultiArrayRust)
+			let array = try MLMultiArray.init(
+				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
+				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
 			self.dict[featureName.toString()] = value
 		} catch {
 			print("Unexpected error; \(error)")
 		}
 	}
-	func bindInputI32(shape: RustVec<Int32>, featureName: RustString, data: RustVec<Int32>) {
+
+	func bindInputI32(
+		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Int32>, len: UInt
+	) {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -138,15 +188,23 @@ class Model {
 			for s in shape {
 				arr.append(NSNumber(value: s))
 			}
-			// let array = try MLMultiArray.init(dataPointer: shape.ptr, shape: arr, dataType: MLMultiArrayDataType.float32, strides: stride)
-			let array = try MLMultiArray.init(shape: arr, dataType: MLMultiArrayDataType.int32)
+			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) -> Void in
+				rust_vec_free_i32(ptr.assumingMemoryBound(to: Int32.self), len)
+			}
+			let array = try MLMultiArray.init(
+				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
+				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
 			self.dict[featureName.toString()] = value
 		} catch {
 			print("Unexpected error; \(error)")
 		}
 	}
-	func bindInputF16(shape: RustVec<Int32>, featureName: RustString, data: RustVec<UInt16>) {
+
+	func bindInputU16(
+		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<UInt16>,
+		len: UInt
+	) {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -159,8 +217,12 @@ class Model {
 			for s in shape {
 				arr.append(NSNumber(value: s))
 			}
-			let array = try MLMultiArray.init(dataPointer: shape.ptr, shape: arr, dataType: MLMultiArrayDataType.float16, strides: stride)
-			// let array = try MLMultiArray.init(shape: arr, dataType: MLMultiArrayDataType.float16)
+			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) -> Void in
+				rust_vec_free_u16(ptr.assumingMemoryBound(to: UInt16.self), len)
+			}
+			let array = try MLMultiArray.init(
+				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float16,
+				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
 			self.dict[featureName.toString()] = value
 		} catch {
