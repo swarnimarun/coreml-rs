@@ -1,8 +1,9 @@
 use half::{f16, vec::HalfFloatVecExt};
-use ndarray::{Array2, Array3, Array4, Array5, Array6};
+use ndarray::{Array2, Array3, Array4, Array5, Array6, ArrayBase, Dim, IxDynImpl, OwnedRepr};
 
 #[derive(Clone, Debug)]
 pub enum FloatMLArray {
+    Array(ArrayBase<OwnedRepr<f32>, Dim<IxDynImpl>>),
     Array2(Array2<f32>),
     Array3(Array3<f32>),
     Array4(Array4<f32>),
@@ -47,6 +48,7 @@ impl MLArray {
     }
     pub fn into_raw_vec_f32(self) -> Vec<f32> {
         match self {
+            MLArray::FloatArray(FloatMLArray::Array(ab)) => ab.into_raw_vec(),
             MLArray::FloatArray(FloatMLArray::Array2(ab)) => ab.into_raw_vec(),
             MLArray::FloatArray(FloatMLArray::Array3(ab)) => ab.into_raw_vec(),
             MLArray::FloatArray(FloatMLArray::Array4(ab)) => ab.into_raw_vec(),
@@ -93,6 +95,7 @@ impl MLArray {
     }
     pub fn shape(&self) -> &[usize] {
         match self {
+            MLArray::FloatArray(FloatMLArray::Array(ab)) => ab.shape(),
             MLArray::FloatArray(FloatMLArray::Array2(ab)) => ab.shape(),
             MLArray::FloatArray(FloatMLArray::Array3(ab)) => ab.shape(),
             MLArray::FloatArray(FloatMLArray::Array4(ab)) => ab.shape(),
@@ -114,6 +117,11 @@ impl MLArray {
     }
 }
 
+impl From<ArrayBase<OwnedRepr<f32>, Dim<IxDynImpl>>> for MLArray {
+    fn from(value: ArrayBase<OwnedRepr<f32>, Dim<IxDynImpl>>) -> Self {
+        MLArray::FloatArray(FloatMLArray::Array(value))
+    }
+}
 impl From<Array2<f32>> for MLArray {
     fn from(value: Array2<f32>) -> Self {
         MLArray::FloatArray(FloatMLArray::Array2(value))

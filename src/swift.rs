@@ -1,4 +1,8 @@
-use swift::ComputePlatform;
+use std::collections::HashMap;
+
+use swift::{ComputePlatform, ModelOutput};
+
+use crate::mlarray::MLArray;
 
 #[swift_bridge::bridge]
 pub mod swift {
@@ -84,4 +88,9 @@ fn rust_vec_free_i32(ptr: *mut i32, len: usize) {
     unsafe {
         _ = Vec::from_raw_parts(ptr, len, len);
     }
+}
+
+pub struct MLModelOutput {
+    pub model_output: ModelOutput,
+    pub outputs: HashMap<String, MLArray>,
 }

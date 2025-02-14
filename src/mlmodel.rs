@@ -5,9 +5,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use ndarray::Array;
+
 use crate::{
-    ffi::{ComputePlatform, Model, ModelOutput},
+    ffi::{ComputePlatform, Model},
     mlarray::MLArray,
+    swift::MLModelOutput,
 };
 
 pub struct Store(Arc<Mutex<Vec<MLArray>>>);
@@ -81,6 +84,7 @@ pub struct CoreMLModel<'a> {
     model: Option<Model>,
     path: PathBuf,
     opts: CoreMLModelOptions,
+    outputs: HashMap<String, (&'static str, Vec<usize>)>,
     _p: PhantomData<CoreMLInputRef<'a>>,
 }
 
@@ -91,6 +95,7 @@ impl<'a> CoreMLModel<'a> {
             path: path.as_ref().to_path_buf(),
             _p: PhantomData::default(),
             opts,
+            outputs: Default::default(),
         }
     }
 
@@ -155,7 +160,11 @@ impl<'a> CoreMLModel<'a> {
             "ensure model is compiled & loaded; before adding inputs"
         );
         let arr: MLArray = out.into();
-        let shape = arr.shape().into_iter().map(|i| *i as i32).collect();
+        let shape = arr.shape();
+        self.outputs
+            .insert(tag.as_ref().to_string(), ("f32", shape.to_vec()));
+
+        let shape: Vec<i32> = shape.into_iter().map(|i| *i as i32).collect();
         let mut data = arr.into_raw_vec_f32();
         let name = tag.as_ref().to_string();
         let ptr = data.as_mut_ptr();
@@ -167,9 +176,24 @@ impl<'a> CoreMLModel<'a> {
         std::mem::forget(data);
     }
 
-    pub fn predict(&mut self) -> Option<ModelOutput> {
+    pub fn predict(&mut self) -> Option<MLModelOutput> {
         if let Some(model) = &mut self.model {
-            Some(model.modelRun())
+            let output = model.modelRun();
+            Some(MLModelOutput {
+                outputs: self
+                    .outputs
+                    .clone()
+                    .into_iter()
+                    .map(|(key, (ty, shape))| {
+                        assert_eq!(ty, "f32", "non f32 types are currently not supported");
+                        let name = key.clone();
+                        let out = output.outputF32(name);
+                        let array = Array::from_shape_vec(shape, out).unwrap();
+                        (key, array.into())
+                    })
+                    .collect(),
+                model_output: output,
+            })
         } else {
             None
         }

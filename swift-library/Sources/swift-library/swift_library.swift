@@ -137,7 +137,9 @@ class Model {
 			let opts = MLPredictionOptions.init()
 			opts.outputBackings = self.outputs
 			try self.model!.prediction(from: self.inputs!, options: opts)
-			return ModelOutput(output: self.outputs)
+			let outputs = self.outputs
+			self.outputs = [:]
+			return ModelOutput(output: outputs)
 		} catch {
 			print("Unexpected error: \(error)")
 			return ModelOutput(output: self.outputs)
