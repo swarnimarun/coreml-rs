@@ -9,7 +9,7 @@ license-file = "LICENSE"
 anyhow = { version = "1", features = ["backtrace"] }
 bytemuck = "1.21.0"
 half = { version = "2.4.1", features = ["alloc", "serde", "zerocopy"] }
-ndarray = { version = "0.16.1", features = ["serde", "blas"] }
+ndarray = { version = "0.15.6", features = ["serde", "blas"] }
 num = "0.4.3"
 swift-bridge = "0.1"
 

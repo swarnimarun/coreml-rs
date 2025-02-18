@@ -240,6 +240,7 @@ impl<T: MLType> From<ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>> for MLArray {
         }
     }
 }
+
 impl<T: MLType> From<Array2<T>> for MLArray {
     fn from(value: Array2<T>) -> Self {
         unsafe {
