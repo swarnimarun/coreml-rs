@@ -1,5 +1,7 @@
 use half::{f16, vec::HalfFloatVecExt};
-use ndarray::{Array2, Array3, Array4, Array5, Array6, ArrayBase, Dim, IxDynImpl, OwnedRepr};
+use ndarray::{
+    Array, Array2, Array3, Array4, Array5, Array6, ArrayBase, Dim, IxDynImpl, OwnedRepr,
+};
 
 #[derive(Debug)]
 pub enum FloatMLArray {
@@ -249,6 +251,42 @@ impl<T: MLType> From<Array2<T>> for MLArray {
                 1 => MLArray::Float16Array(Float16MLArray::Array2(std::mem::transmute(value))),
                 2 => MLArray::Int32Array(Int32MLArray::Array2(std::mem::transmute(value))),
                 _ => panic!("not supported"),
+            }
+        }
+    }
+}
+
+impl FloatMLArray {
+    pub fn extract(self) -> Array<f32, Dim<IxDynImpl>> {
+        match self {
+            FloatMLArray::Array(array_base) => array_base,
+            _ => todo!(),
+        }
+    }
+}
+
+impl Float16MLArray {
+    pub fn extract(self) -> Array<f32, Dim<IxDynImpl>> {
+        match self {
+            _ => todo!(),
+        }
+    }
+}
+impl Int32MLArray {
+    pub fn extract(self) -> Array<f32, Dim<IxDynImpl>> {
+        match self {
+            _ => todo!(),
+        }
+    }
+}
+
+impl MLArray {
+    pub fn extract_to_tensor<T: MLType>(self) -> Array<T, Dim<IxDynImpl>> {
+        unsafe {
+            match self {
+                MLArray::FloatArray(fm) => std::mem::transmute(fm.extract()),
+                MLArray::Float16Array(fm) => std::mem::transmute(fm.extract()),
+                MLArray::Int32Array(im) => std::mem::transmute(im.extract()),
             }
         }
     }
