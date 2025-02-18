@@ -42,6 +42,9 @@ pub mod swift {
 
         fn inputs(&self) -> Vec<String>;
         fn outputs(&self) -> Vec<String>;
+        fn output_names(&self) -> Vec<String>;
+        fn output_type(&self, name: String) -> String;
+        fn output_shape(&self, name: String) -> Vec<usize>;
     }
 
     extern "Swift" {

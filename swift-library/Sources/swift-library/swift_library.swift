@@ -21,6 +21,28 @@ class ModelDescription {
 		}
 		return ret
 	}
+	func output_type(name: RustString) -> RustString {
+		let res = self.description!.outputDescriptionsByName[name.toString()]!
+		if res.multiArrayConstraint!.dataType == MLMultiArrayDataType.float32 {
+			return "f32".intoRustString()
+		}
+		return "".intoRustString()
+	}
+	func output_shape(name: RustString) -> RustVec<UInt> {
+		let res = self.description!.outputDescriptionsByName[name.toString()]!
+		let ret = RustVec<UInt>()
+		for r in res.multiArrayConstraint!.shape {
+			ret.push(value: UInt(truncating: r))
+		}
+		return ret
+	}
+	func output_names() -> RustVec<RustString> {
+		let ret = RustVec<RustString>()
+		for (key, _) in self.description!.outputDescriptionsByName {
+			ret.push(value: key.intoRustString())
+		}
+		return ret
+	}
 }
 
 class ModelOutput {

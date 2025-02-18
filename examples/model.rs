@@ -47,8 +47,6 @@ pub fn main() {
 
     // initialize the output buffer on rust side
     for _ in 0..10 {
-        let output = Array4::<f32>::zeros((1, 3, 2048, 2048));
-        m.add_output_f32("add", output);
         let output = timeit("predict", || {
             return m.predict();
         })

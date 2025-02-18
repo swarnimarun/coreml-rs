@@ -1,7 +1,7 @@
 use half::{f16, vec::HalfFloatVecExt};
 use ndarray::{Array2, Array3, Array4, Array5, Array6, ArrayBase, Dim, IxDynImpl, OwnedRepr};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum FloatMLArray {
     Array(ArrayBase<OwnedRepr<f32>, Dim<IxDynImpl>>),
     Array2(Array2<f32>),
@@ -11,7 +11,7 @@ pub enum FloatMLArray {
     Array6(Array6<f32>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Int32MLArray {
     Array2(Array2<i32>),
     Array3(Array3<i32>),
@@ -20,7 +20,7 @@ pub enum Int32MLArray {
     Array6(Array6<i32>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Float16MLArray {
     Array2(Array2<f16>),
     Array3(Array3<f16>),
@@ -29,7 +29,7 @@ pub enum Float16MLArray {
     Array6(Array6<f16>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum MLArray {
     FloatArray(FloatMLArray),
     Float16Array(Float16MLArray),
@@ -117,16 +117,6 @@ impl MLArray {
     }
 }
 
-impl From<ArrayBase<OwnedRepr<f32>, Dim<IxDynImpl>>> for MLArray {
-    fn from(value: ArrayBase<OwnedRepr<f32>, Dim<IxDynImpl>>) -> Self {
-        MLArray::FloatArray(FloatMLArray::Array(value))
-    }
-}
-impl From<Array2<f32>> for MLArray {
-    fn from(value: Array2<f32>) -> Self {
-        MLArray::FloatArray(FloatMLArray::Array2(value))
-    }
-}
 impl From<Array3<f32>> for MLArray {
     fn from(value: Array3<f32>) -> Self {
         MLArray::FloatArray(FloatMLArray::Array3(value))
@@ -147,11 +137,6 @@ impl From<Array6<f32>> for MLArray {
         MLArray::FloatArray(FloatMLArray::Array6(value))
     }
 }
-impl From<Array2<i32>> for MLArray {
-    fn from(value: Array2<i32>) -> Self {
-        MLArray::Int32Array(Int32MLArray::Array2(value))
-    }
-}
 impl From<Array3<i32>> for MLArray {
     fn from(value: Array3<i32>) -> Self {
         MLArray::Int32Array(Int32MLArray::Array3(value))
@@ -170,11 +155,6 @@ impl From<Array5<i32>> for MLArray {
 impl From<Array6<i32>> for MLArray {
     fn from(value: Array6<i32>) -> Self {
         MLArray::Int32Array(Int32MLArray::Array6(value))
-    }
-}
-impl From<Array2<f16>> for MLArray {
-    fn from(value: Array2<f16>) -> Self {
-        MLArray::Float16Array(Float16MLArray::Array2(value))
     }
 }
 impl From<Array3<f16>> for MLArray {
@@ -234,4 +214,41 @@ pub fn mean_absolute_error<
         .map(|(&l, &r)| if l > r { l - r } else { r - l })
         .fold((0f64, 0usize), |(acc, count), x| (acc + x.as_(), count + 1));
     sum / count as f64
+}
+
+pub trait MLType {
+    const TY: usize;
+}
+
+impl MLType for f32 {
+    const TY: usize = 0;
+}
+impl MLType for half::f16 {
+    const TY: usize = 1;
+}
+impl MLType for i32 {
+    const TY: usize = 2;
+}
+
+impl<T: MLType> From<ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>> for MLArray {
+    fn from(value: ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>) -> Self {
+        unsafe {
+            match T::TY {
+                0 => MLArray::FloatArray(FloatMLArray::Array(std::mem::transmute(value))),
+                _ => panic!("not supported"),
+            }
+        }
+    }
+}
+impl<T: MLType> From<Array2<T>> for MLArray {
+    fn from(value: Array2<T>) -> Self {
+        unsafe {
+            match T::TY {
+                0 => MLArray::FloatArray(FloatMLArray::Array2(std::mem::transmute(value))),
+                1 => MLArray::Float16Array(Float16MLArray::Array2(std::mem::transmute(value))),
+                2 => MLArray::Int32Array(Int32MLArray::Array2(std::mem::transmute(value))),
+                _ => panic!("not supported"),
+            }
+        }
+    }
 }

@@ -3,13 +3,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ndarray::Array;
+use ndarray::{Array, ArrayBase, Dim, IxDynImpl, OwnedRepr};
 
 use crate::{
     ffi::{ComputePlatform, Model},
     mlarray::MLArray,
-    swift::MLModelOutput,
 };
+
+pub use crate::swift::MLModelOutput;
 
 #[derive(Default)]
 pub struct CoreMLModelOptions {
@@ -30,6 +31,20 @@ impl CoreMLModel {
             path: path.as_ref().to_path_buf(),
             opts,
             outputs: Default::default(),
+        }
+    }
+
+    pub fn add_input(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) {
+        // route input correctly
+        let input: MLArray = input.into();
+        if input.is_f32() {
+            self.add_input_f32(tag, input);
+        } else if input.is_f16() {
+            self.add_input_f16(tag, input);
+        } else if input.is_i32() {
+            self.add_input_i32(tag, input);
+        } else {
+            panic!("unreachable!")
         }
     }
 
@@ -111,26 +126,37 @@ impl CoreMLModel {
     }
 
     pub fn predict(&mut self) -> Option<MLModelOutput> {
-        if let Some(model) = &mut self.model {
-            let output = model.modelRun();
-            Some(MLModelOutput {
-                outputs: self
-                    .outputs
-                    .clone()
-                    .into_iter()
-                    .map(|(key, (ty, shape))| {
-                        assert_eq!(ty, "f32", "non f32 types are currently not supported");
-                        let name = key.clone();
-                        let out = output.outputF32(name);
-                        let array = Array::from_shape_vec(shape, out).unwrap();
-                        (key, array.into())
-                    })
-                    .collect(),
-                model_output: output,
-            })
-        } else {
-            None
+        let desc = self.model.as_ref().unwrap().modelDescription();
+        for name in desc.output_names() {
+            let output_shape = desc.output_shape(name.clone());
+            let ty = desc.output_type(name.clone());
+            match ty.as_str() {
+                "f32" => {
+                    self.add_output_f32(name, Array::<f32, _>::zeros(output_shape));
+                }
+                _ => panic!("not supported"),
+                // "f16" => {
+                //     // self.add_output_u16(output_name, output_shape);
+                // }
+                // "i32" => {}
+            }
         }
+        let output = self.model.as_ref().unwrap().modelRun();
+        Some(MLModelOutput {
+            outputs: self
+                .outputs
+                .clone()
+                .into_iter()
+                .map(|(key, (ty, shape))| {
+                    assert_eq!(ty, "f32", "non f32 types are currently not supported");
+                    let name = key.clone();
+                    let out = output.outputF32(name);
+                    let array = Array::from_shape_vec(shape, out).unwrap();
+                    (key, array.into())
+                })
+                .collect(),
+            model_output: output,
+        })
     }
 
     pub fn load(&mut self) {
