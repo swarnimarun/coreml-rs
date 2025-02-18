@@ -1,8 +1,6 @@
 use std::{
     collections::HashMap,
-    marker::PhantomData,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
 };
 
 use ndarray::Array;
@@ -13,100 +11,36 @@ use crate::{
     swift::MLModelOutput,
 };
 
-pub struct Store(Arc<Mutex<Vec<MLArray>>>);
-
-impl Store {
-    pub fn empty_ref<'a>(&'a self) -> CoreMLInputRef<'a> {
-        CoreMLInputRef(0, self)
-    }
-    pub fn new() -> Self {
-        Store(Arc::new(Mutex::new(vec![])))
-    }
-    pub fn insert(&self, d: impl Into<MLArray>) -> usize {
-        let mut guard = self.0.lock().unwrap();
-        guard.push(d.into());
-        guard.len() - 1
-    }
-    pub fn bind_ref<'a>(&'a self, idx: usize) -> CoreMLInputRef<'a> {
-        CoreMLInputRef(idx, self)
-    }
-    pub fn get(
-        &self,
-    ) -> Result<
-        std::sync::MutexGuard<'_, Vec<MLArray>>,
-        std::sync::PoisonError<std::sync::MutexGuard<'_, Vec<MLArray>>>,
-    > {
-        self.0.lock()
-    }
-}
-
-pub struct CoreMLInputRef<'a>(usize, &'a Store);
-
-impl<'a> CoreMLInputRef<'a> {
-    pub fn input_data_f32(&self) -> Option<(Vec<i32>, Vec<f32>)> {
-        let Ok(mut v) = self.1.get() else {
-            return None;
-        };
-        let v = v.remove(self.0);
-        Some((
-            v.shape().into_iter().map(|s| *s as i32).collect(),
-            v.into_raw_vec_f32(),
-        ))
-    }
-    pub fn input_data_f16(&self) -> Option<(Vec<i32>, Vec<u16>)> {
-        let Ok(mut v) = self.1.get() else {
-            return None;
-        };
-        let v = v.remove(self.0);
-        Some((
-            v.shape().into_iter().map(|s| *s as i32).collect(),
-            v.into_raw_vec_u16(),
-        ))
-    }
-    pub fn input_data_i32(&self) -> Option<(Vec<i32>, Vec<i32>)> {
-        let Ok(mut v) = self.1.get() else {
-            return None;
-        };
-        let v = v.remove(self.0);
-        Some((
-            v.shape().into_iter().map(|s| *s as i32).collect(),
-            v.into_raw_vec_i32(),
-        ))
-    }
-}
-
 #[derive(Default)]
 pub struct CoreMLModelOptions {
     pub compute_platform: ComputePlatform,
 }
 
-pub struct CoreMLModel<'a> {
+pub struct CoreMLModel {
     model: Option<Model>,
     path: PathBuf,
     opts: CoreMLModelOptions,
     outputs: HashMap<String, (&'static str, Vec<usize>)>,
-    _p: PhantomData<CoreMLInputRef<'a>>,
 }
 
-impl<'a> CoreMLModel<'a> {
-    pub fn new(path: impl AsRef<Path>, _: &'a Store, opts: CoreMLModelOptions) -> Self {
+impl CoreMLModel {
+    pub fn new(path: impl AsRef<Path>, opts: CoreMLModelOptions) -> Self {
         Self {
             model: None,
             path: path.as_ref().to_path_buf(),
-            _p: PhantomData::default(),
             opts,
             outputs: Default::default(),
         }
     }
 
-    pub fn add_input_i32(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
+    pub fn add_input_i32(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) {
         debug_assert!(
             self.model.is_some(),
             "ensure model is compiled & loaded; before adding inputs"
         );
-        let Some((shape, mut data)) = input.input_data_i32() else {
-            panic!("i32 welp")
-        };
+        let v: MLArray = input.into();
+        let shape = v.shape().into_iter().map(|s| *s as i32).collect();
+        let mut data = v.into_raw_vec_i32();
         let name = tag.as_ref().to_string();
         self.model
             .as_mut()
@@ -115,14 +49,14 @@ impl<'a> CoreMLModel<'a> {
         std::mem::forget(data);
     }
 
-    pub fn add_input_f32(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
+    pub fn add_input_f32(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) {
         debug_assert!(
             self.model.is_some(),
             "ensure model is compiled & loaded; before adding inputs"
         );
-        let Some((shape, mut data)) = input.input_data_f32() else {
-            panic!("f32 welp")
-        };
+        let v: MLArray = input.into();
+        let shape = v.shape().into_iter().map(|s| *s as i32).collect();
+        let mut data = v.into_raw_vec_f32();
         let name = tag.as_ref().to_string();
         self.model
             .as_mut()
@@ -131,14 +65,14 @@ impl<'a> CoreMLModel<'a> {
         std::mem::forget(data);
     }
 
-    pub fn add_input_f16(&mut self, tag: impl AsRef<str>, input: CoreMLInputRef<'a>) {
+    pub fn add_input_f16(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) {
         debug_assert!(
             self.model.is_some(),
             "ensure model is compiled & loaded; before adding inputs"
         );
-        let Some((shape, mut data)) = input.input_data_f16() else {
-            panic!("f16 welp")
-        };
+        let v: MLArray = input.into();
+        let shape = v.shape().into_iter().map(|s| *s as i32).collect();
+        let mut data = v.into_raw_vec_u16();
         let name = tag.as_ref().to_string();
         self.model
             .as_mut()
