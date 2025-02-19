@@ -22,6 +22,7 @@ pub struct CoreMLModel {
     path: PathBuf,
     opts: CoreMLModelOptions,
     outputs: HashMap<String, (&'static str, Vec<usize>)>,
+    loaded: bool,
 }
 
 impl CoreMLModel {
@@ -31,6 +32,7 @@ impl CoreMLModel {
             path: path.as_ref().to_path_buf(),
             opts,
             outputs: Default::default(),
+            loaded: false,
         }
     }
     pub fn new_compiled(path: impl AsRef<Path>, opts: CoreMLModelOptions) -> Self {
@@ -43,6 +45,7 @@ impl CoreMLModel {
             )),
             opts,
             outputs: Default::default(),
+            loaded: false,
         }
     }
 
@@ -175,8 +178,19 @@ impl CoreMLModel {
     pub fn load(&mut self) {
         if let Some(model) = &mut self.model {
             model.modelLoad();
-        } else {
         }
+        self.loaded = true;
+    }
+
+    pub fn unload(&mut self) {
+        if let Some(model) = &mut self.model {
+            model.modelUnload();
+        }
+        self.loaded = false;
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.loaded
     }
 
     pub fn description(&self) -> HashMap<&str, Vec<String>> {
