@@ -98,7 +98,7 @@ class Model {
 	var outputs: [String: Any] = [:]
 	var computeUnits: MLComputeUnits = .cpuAndNeuralEngine
 
-	init(path: RustString, compute: ComputePlatform) {
+	init(path: RustString, compute: ComputePlatform, compiled: Bool) {
 		switch compute {
 		case .Cpu:
 			self.computeUnits = .cpuOnly
@@ -110,8 +110,12 @@ class Model {
 			self.computeUnits = .cpuAndGPU
 			break
 		}
-		let url = URL(string: path.toString())!
-		self.compiledPath = try! MLModel.compileModel(at: url)
+		if compiled {
+			self.compiledPath = URL(string: path.toString())!
+		} else {
+			let url = URL(string: path.toString())!
+			self.compiledPath = try! MLModel.compileModel(at: url)
+		}
 	}
 
 	func load() {
@@ -119,6 +123,10 @@ class Model {
 		config.computeUnits = self.computeUnits
 		let loadedModel = try! MLModel(contentsOf: self.compiledPath!, configuration: config)
 		self.model = loadedModel
+	}
+
+	func unload() {
+		self.model = nil
 	}
 
 	func description() -> ModelDescription {

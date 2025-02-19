@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ndarray::{Array, ArrayBase, Dim, IxDynImpl, OwnedRepr};
+use ndarray::Array;
 
 use crate::{
     ffi::{ComputePlatform, Model},
@@ -29,6 +29,18 @@ impl CoreMLModel {
         Self {
             model: None,
             path: path.as_ref().to_path_buf(),
+            opts,
+            outputs: Default::default(),
+        }
+    }
+    pub fn new_compiled(path: impl AsRef<Path>, opts: CoreMLModelOptions) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            model: Some(Model::compileModel(
+                path.as_ref().display().to_string(),
+                opts.compute_platform,
+                true,
+            )),
             opts,
             outputs: Default::default(),
         }
@@ -100,6 +112,7 @@ impl CoreMLModel {
         self.model = Some(Model::compileModel(
             self.path.display().to_string(),
             self.opts.compute_platform,
+            false,
         ));
     }
 
