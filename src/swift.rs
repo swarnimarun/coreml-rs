@@ -18,13 +18,21 @@ pub mod swift {
         fn rust_vec_free_f32(ptr: *mut f32, len: usize);
         fn rust_vec_free_i32(ptr: *mut i32, len: usize);
         fn rust_vec_free_u16(ptr: *mut u16, len: usize);
+        fn rust_vec_free_u8(ptr: *mut u8, len: usize);
+    }
+
+    extern "Swift" {
+        #[swift_bridge(swift_name = "initWithPath")]
+        pub fn modelWithPath(path: String, compute: ComputePlatform, compiled: bool) -> Model;
+        #[swift_bridge(swift_name = "initWithCompiledAsset")]
+        pub fn modelWithAssets(ptr: *mut u8, len: isize, compute: ComputePlatform) -> Model;
+        #[swift_bridge(swift_name = "LoadAndSaveData")]
+        pub fn load_save(path: String, to: String);
     }
 
     extern "Swift" {
         type Model;
 
-        #[swift_bridge(init)]
-        fn compileModel(path: String, compute: ComputePlatform, compiled: bool) -> Model;
         fn bindOutputF32(&self, shape: Vec<i32>, featureName: String, data: *mut f32, len: usize);
         fn bindInputF32(&self, shape: Vec<i32>, featureName: String, data: *mut f32, len: usize);
         fn bindInputI32(&self, shape: Vec<i32>, featureName: String, data: *mut i32, len: usize);
@@ -59,6 +67,8 @@ pub mod swift {
     }
 }
 
+pub use swift::{modelWithAssets, modelWithPath};
+
 impl std::default::Default for ComputePlatform {
     fn default() -> Self {
         ComputePlatform::CpuAndGpu
@@ -84,11 +94,19 @@ fn rust_vec_free_f32(ptr: *mut f32, len: usize) {
         _ = Vec::from_raw_parts(ptr, len, len);
     }
 }
+
 fn rust_vec_free_u16(ptr: *mut u16, len: usize) {
     unsafe {
         _ = Vec::from_raw_parts(ptr, len, len);
     }
 }
+
+fn rust_vec_free_u8(ptr: *mut u8, len: usize) {
+    unsafe {
+        _ = Vec::from_raw_parts(ptr, len, len);
+    }
+}
+
 fn rust_vec_free_i32(ptr: *mut i32, len: usize) {
     unsafe {
         _ = Vec::from_raw_parts(ptr, len, len);

@@ -1,5 +1,11 @@
 import CoreML
 
+// Load and Save Data
+func LoadAndSaveData(path: RustString, to: RustString) {
+	let data = try! Data.init(contentsOf: URL(string: path.toString())!)
+	try! data.write(to: URL(string: to.toString())!)
+}
+
 class ModelDescription {
 	var description: MLModelDescription? = nil
 	init(desc: MLModelDescription) {
@@ -90,39 +96,87 @@ class ModelOutput {
 	}
 }
 
-class Model {
+func initWithCompiledAsset(
+	ptr: UnsafeMutablePointer<UInt8>, len: Int, compute: ComputePlatform
+) -> Model {
+	var computeUnits: MLComputeUnits
+	switch compute {
+	case .Cpu:
+		computeUnits = .cpuOnly
+		break
+	case .CpuAndANE:
+		computeUnits = .cpuAndNeuralEngine
+		break
+	case .CpuAndGpu:
+		computeUnits = .cpuAndGPU
+		break
+	}
+	let data = Data.init(
+		bytesNoCopy: ptr, count: len,
+		deallocator: Data.Deallocator.custom { ptr, len in
+			return ()
+		})
+	let m = Model.init()
+	m.modelCompiledAsset = try! MLModelAsset.init(specification: data)
+	m.computeUnits = computeUnits
+	return m
+}
+
+func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) -> Model {
+	var computeUnits: MLComputeUnits
+	switch compute {
+	case .Cpu:
+		computeUnits = .cpuOnly
+		break
+	case .CpuAndANE:
+		computeUnits = .cpuAndNeuralEngine
+		break
+	case .CpuAndGpu:
+		computeUnits = .cpuAndGPU
+		break
+	}
+	var compiledPath: URL
+	if compiled {
+		compiledPath = URL(string: path.toString())!
+	} else {
+		let url = URL(string: path.toString())!
+		compiledPath = try! MLModel.compileModel(at: url)
+	}
+	let m = Model.init()
+	m.compiledPath = compiledPath
+	print("compiledPath", compiledPath)
+	m.computeUnits = computeUnits
+	return m
+}
+
+class Model: @unchecked Sendable {
 	var compiledPath: URL? = nil
+	var modelCompiledAsset: MLModelAsset? = nil
 	var model: MLModel? = nil
 	var dict: [String: Any] = [:]
 	var inputs: MLDictionaryFeatureProvider? = nil
 	var outputs: [String: Any] = [:]
 	var computeUnits: MLComputeUnits = .cpuAndNeuralEngine
 
-	init(path: RustString, compute: ComputePlatform, compiled: Bool) {
-		switch compute {
-		case .Cpu:
-			self.computeUnits = .cpuOnly
-			break
-		case .CpuAndANE:
-			self.computeUnits = .cpuAndNeuralEngine
-			break
-		case .CpuAndGpu:
-			self.computeUnits = .cpuAndGPU
-			break
-		}
-		if compiled {
-			self.compiledPath = URL(string: path.toString())!
-		} else {
-			let url = URL(string: path.toString())!
-			self.compiledPath = try! MLModel.compileModel(at: url)
-		}
-	}
+	init() {}
 
 	func load() {
 		let config = MLModelConfiguration.init()
 		config.computeUnits = self.computeUnits
-		let loadedModel = try! MLModel(contentsOf: self.compiledPath!, configuration: config)
-		self.model = loadedModel
+		if self.compiledPath == nil {
+			let semaphore = DispatchSemaphore(value: 0)
+			Task { [weak self] in
+				guard let self else { return }
+				let asset = self.modelCompiledAsset!
+				let res = try! await MLModel.load(asset: asset, configuration: config)
+				self.model = res
+				semaphore.signal()
+			}
+			semaphore.wait()
+		} else {
+			let loadedModel = try! MLModel(contentsOf: self.compiledPath!, configuration: config)
+			self.model = loadedModel
+		}
 	}
 
 	func unload() {

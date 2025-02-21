@@ -6,8 +6,9 @@ use std::{
 use ndarray::Array;
 
 use crate::{
-    ffi::{ComputePlatform, Model},
+    ffi::{modelWithAssets, ComputePlatform, Model},
     mlarray::MLArray,
+    swift::modelWithPath,
 };
 
 pub use crate::swift::MLModelOutput;
@@ -19,7 +20,7 @@ pub struct CoreMLModelOptions {
 
 pub struct CoreMLModel {
     model: Option<Model>,
-    path: PathBuf,
+    path: Option<PathBuf>,
     opts: CoreMLModelOptions,
     outputs: HashMap<String, (&'static str, Vec<usize>)>,
     loaded: bool,
@@ -29,7 +30,7 @@ impl CoreMLModel {
     pub fn new(path: impl AsRef<Path>, opts: CoreMLModelOptions) -> Self {
         Self {
             model: None,
-            path: path.as_ref().to_path_buf(),
+            path: Some(path.as_ref().to_path_buf()),
             opts,
             outputs: Default::default(),
             loaded: false,
@@ -37,8 +38,8 @@ impl CoreMLModel {
     }
     pub fn new_compiled(path: impl AsRef<Path>, opts: CoreMLModelOptions) -> Self {
         Self {
-            path: path.as_ref().to_path_buf(),
-            model: Some(Model::compileModel(
+            path: None,
+            model: Some(modelWithPath(
                 path.as_ref().display().to_string(),
                 opts.compute_platform,
                 true,
@@ -47,6 +48,22 @@ impl CoreMLModel {
             outputs: Default::default(),
             loaded: false,
         }
+    }
+
+    pub fn from_buf(mut buf: Vec<u8>, opts: CoreMLModelOptions) -> Self {
+        let m = Self {
+            path: None,
+            model: Some(modelWithAssets(
+                buf.as_mut_ptr(),
+                buf.len() as isize,
+                opts.compute_platform,
+            )),
+            opts,
+            outputs: Default::default(),
+            loaded: false,
+        };
+        std::mem::forget(buf);
+        m
     }
 
     pub fn add_input(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) {
@@ -112,8 +129,8 @@ impl CoreMLModel {
     }
 
     pub fn compile(&mut self) {
-        self.model = Some(Model::compileModel(
-            self.path.display().to_string(),
+        self.model = Some(modelWithPath(
+            self.path.as_ref().unwrap().display().to_string(),
             self.opts.compute_platform,
             false,
         ));
