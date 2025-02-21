@@ -144,7 +144,6 @@ func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) ->
 	}
 	let m = Model.init()
 	m.compiledPath = compiledPath
-	print("compiledPath", compiledPath)
 	m.computeUnits = computeUnits
 	return m
 }

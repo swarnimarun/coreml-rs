@@ -22,8 +22,17 @@ pub struct CoreMLModel {
     model: Option<Model>,
     path: Option<PathBuf>,
     opts: CoreMLModelOptions,
+    save_path: Option<PathBuf>,
     outputs: HashMap<String, (&'static str, Vec<usize>)>,
     loaded: bool,
+}
+
+impl Drop for CoreMLModel {
+    fn drop(&mut self) {
+        if let Some(save_path) = &self.save_path {
+            _ = std::fs::remove_dir_all(save_path);
+        }
+    }
 }
 
 impl CoreMLModel {
@@ -31,6 +40,7 @@ impl CoreMLModel {
         Self {
             model: None,
             path: Some(path.as_ref().to_path_buf()),
+            save_path: None,
             opts,
             outputs: Default::default(),
             loaded: false,
@@ -39,6 +49,7 @@ impl CoreMLModel {
     pub fn new_compiled(path: impl AsRef<Path>, opts: CoreMLModelOptions) -> Self {
         Self {
             path: None,
+            save_path: None,
             model: Some(modelWithPath(
                 path.as_ref().display().to_string(),
                 opts.compute_platform,
@@ -53,6 +64,7 @@ impl CoreMLModel {
     pub fn from_buf(mut buf: Vec<u8>, opts: CoreMLModelOptions) -> Self {
         let m = Self {
             path: None,
+            save_path: None,
             model: Some(modelWithAssets(
                 buf.as_mut_ptr(),
                 buf.len() as isize,
@@ -63,6 +75,13 @@ impl CoreMLModel {
             loaded: false,
         };
         std::mem::forget(buf);
+        m
+    }
+
+    pub fn from_buf_indirect(buf: &[u8], save_path: PathBuf, opts: CoreMLModelOptions) -> Self {
+        let _ = std::fs::write(&save_path, buf);
+        let mut m = Self::new_compiled(&save_path, opts);
+        m.save_path = Some(save_path);
         m
     }
 
