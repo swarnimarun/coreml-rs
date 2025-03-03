@@ -231,6 +231,12 @@ impl MLType for half::f16 {
 impl MLType for i32 {
     const TY: usize = 2;
 }
+impl MLType for u16 {
+    const TY: usize = 3;
+}
+impl MLType for u8 {
+    const TY: usize = 4;
+}
 
 impl<T: MLType> From<ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>> for MLArray {
     fn from(value: ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>) -> Self {
