@@ -152,8 +152,8 @@ class Model: @unchecked Sendable {
 	var compiledPath: URL? = nil
 	var modelCompiledAsset: MLModelAsset? = nil
 	var model: MLModel? = nil
-	var dict: [String: Any] = [:]
-	var inputs: MLDictionaryFeatureProvider? = nil
+	var dicts: [[String: Any]] = []
+	var inputs: [MLDictionaryFeatureProvider] = []
 	var outputs: [String: Any] = [:]
 	var computeUnits: MLComputeUnits = .cpuAndNeuralEngine
 
@@ -216,12 +216,34 @@ class Model: @unchecked Sendable {
 
 	func predict() -> ModelOutput {
 		do {
-			self.inputs = try MLDictionaryFeatureProvider.init(dictionary: self.dict)
+			self.inputs.append(try MLDictionaryFeatureProvider.init(dictionary: self.dicts[0]))
 			let opts = MLPredictionOptions.init()
 			opts.outputBackings = self.outputs
-			try self.model!.prediction(from: self.inputs!, options: opts)
+			try self.model!.prediction(from: self.inputs[0], options: opts)
 			let outputs = self.outputs
 			self.outputs = [:]
+			self.inputs = []
+			self.dicts = []
+			return ModelOutput(output: outputs)
+		} catch {
+			print("Unexpected error: \(error)")
+			return ModelOutput(output: self.outputs)
+		}
+	}
+
+	func predict_batch() -> ModelOutput {
+		do {
+			for dict in self.dicts {
+				self.inputs.append(try MLDictionaryFeatureProvider.init(dictionary: dict))
+			}
+			let opts = MLPredictionOptions.init()
+			opts.outputBackings = self.outputs
+			let batchProvider = MLArrayBatchProvider.init(array: self.inputs)
+			try self.model!.predictions(from: batchProvider, options: opts)
+			let outputs = self.outputs
+			self.outputs = [:]
+			self.inputs = []
+			self.dicts = []
 			return ModelOutput(output: outputs)
 		} catch {
 			print("Unexpected error: \(error)")
@@ -252,7 +274,9 @@ class Model: @unchecked Sendable {
 				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
 				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
-			self.dict[featureName.toString()] = value
+			var dict: [String: Any] = [:]
+			dict[featureName.toString()] = value
+			dicts.append(dict)
 		} catch {
 			print("Unexpected error; \(error)")
 		}
@@ -280,7 +304,9 @@ class Model: @unchecked Sendable {
 				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
 				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
-			self.dict[featureName.toString()] = value
+			var dict: [String: Any] = [:]
+			dict[featureName.toString()] = value
+			dicts.append(dict)
 		} catch {
 			print("Unexpected error; \(error)")
 		}
@@ -309,7 +335,9 @@ class Model: @unchecked Sendable {
 				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float16,
 				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
-			self.dict[featureName.toString()] = value
+			var dict: [String: Any] = [:]
+			dict[featureName.toString()] = value
+			dicts.append(dict)
 		} catch {
 			print("Unexpected error; \(error)")
 		}
