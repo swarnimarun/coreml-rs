@@ -43,6 +43,8 @@ pub struct CoreMLModel {
     loaded: bool,
 }
 
+unsafe impl Send for CoreMLModel {}
+
 impl std::fmt::Debug for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Model").finish()
