@@ -18,6 +18,22 @@ pub struct CoreMLModelOptions {
     pub compute_platform: ComputePlatform,
 }
 
+impl std::fmt::Debug for CoreMLModelOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CoreMLModelOptions")
+            .field(
+                "compute_platform",
+                match self.compute_platform {
+                    ComputePlatform::Cpu => &"CPU",
+                    ComputePlatform::CpuAndANE => &"CpuAndAne",
+                    ComputePlatform::CpuAndGpu => &"CpuAndGpu",
+                },
+            )
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct CoreMLModel {
     model: Option<Model>,
     path: Option<PathBuf>,
@@ -25,6 +41,12 @@ pub struct CoreMLModel {
     save_path: Option<PathBuf>,
     outputs: HashMap<String, (&'static str, Vec<usize>)>,
     loaded: bool,
+}
+
+impl std::fmt::Debug for Model {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Model").finish()
+    }
 }
 
 impl Drop for CoreMLModel {
@@ -187,10 +209,6 @@ impl CoreMLModel {
                     self.add_output_f32(name, Array::<f32, _>::zeros(output_shape));
                 }
                 _ => panic!("not supported"),
-                // "f16" => {
-                //     // self.add_output_u16(output_name, output_shape);
-                // }
-                // "i32" => {}
             }
         }
         let output = self.model.as_ref().unwrap().modelRun();
