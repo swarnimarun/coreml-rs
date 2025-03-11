@@ -1,9 +1,9 @@
-use std::sync::atomic::AtomicUsize;
+use std::{path::PathBuf, sync::atomic::AtomicUsize};
 
 use coreml_rs::{
     ffi::ComputePlatform,
     mlarray::{FloatMLArray, MLArray},
-    mlmodel::{CoreMLModel, CoreMLModelOptions},
+    mlmodel::{CoreMLModelOptions, CoreMLModelWithState},
 };
 use ndarray::Array4;
 
@@ -21,42 +21,35 @@ pub fn timeit<T>(t: impl AsRef<str>, f: impl FnOnce() -> T) -> T {
 }
 
 pub fn main() {
+    let file = std::fs::read("./demo/model_3.mlmodel").unwrap();
     let mut m = timeit("load and compile model", || {
         let mut model_options = CoreMLModelOptions::default();
-        // this performs worse when cold starting
-        model_options.compute_platform = ComputePlatform::CpuAndGpu;
-        let mut model = CoreMLModel::new("./demo/test.mlpackage", model_options);
-        timeit("compile model", || {
-            model.compile();
-        });
-        timeit("load model", || {
-            model.load();
-        });
+        model_options.compute_platform = ComputePlatform::CpuAndANE;
+        let mut model = CoreMLModelWithState::from_buf(file, model_options, PathBuf::from(""));
+        model = timeit("load model", || model.load().unwrap());
         // println!("model description:\n{:#?}", model.description());
         return model;
     });
 
-    timeit("create and add input", || {
-        let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
-        // fill input with 1.0
-        input.fill(1.0f32);
-        // let mut fs = std::fs::File::create("input.bin").unwrap();
-        // _ = fs.write_all(bytemuck::cast_slice(input.as_slice().unwrap()));
-        m.add_input_f32("img", input);
-    });
+    let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
+    input.fill(1.0f32);
 
     // initialize the output buffer on rust side
-    for _ in 0..10 {
-        let output = timeit("predict", || {
-            return m.predict();
-        })
-        .unwrap();
-        let _f = match output.outputs.get("add").unwrap() {
-            MLArray::FloatArray(FloatMLArray::Array(array)) => array,
-            _ => panic!("unreachable"),
-        };
-        // println!("{_f:#?}");
-    }
+    // for _ in 0..10 {
+    m.add_input("image", input);
+    let output = timeit("predict", || {
+        return m.predict();
+    })
+    .unwrap();
+
+    let _ = match output.outputs.get("mask").unwrap() {
+        MLArray::FloatArray(FloatMLArray::Array(array)) => array,
+        _ => panic!("unreachable"),
+    };
+    println!("{m:#?}");
+    m = m.unload();
+    println!("{m:#?}");
+    // }
 
     // very cheap doesn't need to be measured!
     // let output: Array4<f32> = Array4::from_shape_vec([1, 3, 2048, 2048], v).unwrap();

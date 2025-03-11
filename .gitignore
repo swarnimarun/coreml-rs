@@ -1,3 +1,7 @@
 /target
 /demo
 *.modelc
+
+model_cache
+
+.DS_Store
