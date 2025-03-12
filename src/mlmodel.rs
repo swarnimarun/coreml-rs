@@ -90,16 +90,22 @@ impl CoreMLModelWithState {
                     todo!()
                 }
                 CoreMLModelLoader::Buffer(vec) => {
-                    if !info.opts.cache_dir.exists() && !info.opts.cache_dir.is_dir() {
+                    println!("loading from buffer!");
+                    if !info.opts.cache_dir.exists() || !info.opts.cache_dir.is_dir() {
                         _ = std::fs::remove_dir_all(&info.opts.cache_dir);
                         _ = std::fs::create_dir_all(&info.opts.cache_dir);
+                        println!("creating directory for model cache!");
                     }
                     let m = info.opts.cache_dir.join("model_cache");
-                    let Ok(_) = std::fs::write(&m, &vec) else {
-                        return Err(CoreMLModelWithState::Unloaded(
-                            info,
-                            CoreMLModelLoader::Buffer(vec),
-                        ));
+                    match std::fs::write(&m, &vec) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            println!("failed to write to model cache! {err}");
+                            return Err(CoreMLModelWithState::Unloaded(
+                                info,
+                                CoreMLModelLoader::Buffer(vec),
+                            ));
+                        }
                     };
                     let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
                     coreml_model.model.modelLoad();
