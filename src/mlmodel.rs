@@ -16,7 +16,7 @@ pub use crate::swift::MLModelOutput;
 #[derive(Default, Clone)]
 pub struct CoreMLModelOptions {
     pub compute_platform: ComputePlatform,
-    pub cache_dir: Option<PathBuf>,
+    pub cache_dir: PathBuf,
 }
 
 impl std::fmt::Debug for CoreMLModelOptions {
@@ -49,9 +49,9 @@ pub enum CoreMLModelWithState {
 }
 
 impl CoreMLModelWithState {
-    pub fn new(path: impl AsRef<Path>, opts: CoreMLModelOptions, cache_dir: PathBuf) -> Self {
+    pub fn new(path: impl AsRef<Path>, opts: CoreMLModelOptions) -> Self {
         Self::Unloaded(
-            CoreMLModelInfo { opts, cache_dir },
+            CoreMLModelInfo { opts },
             CoreMLModelLoader::ModelPath(path.as_ref().to_path_buf()),
         )
     }
@@ -61,7 +61,7 @@ impl CoreMLModelWithState {
         cache_dir: PathBuf,
     ) -> Self {
         Self::Unloaded(
-            CoreMLModelInfo { opts, cache_dir },
+            CoreMLModelInfo { opts },
             CoreMLModelLoader::CompiledPath(path.as_ref().to_path_buf()),
         )
         // Self {
@@ -79,17 +79,7 @@ impl CoreMLModelWithState {
     }
 
     pub fn from_buf(buf: Vec<u8>, opts: CoreMLModelOptions, cache_dir: PathBuf) -> Self {
-        Self::Unloaded(
-            CoreMLModelInfo { opts, cache_dir },
-            CoreMLModelLoader::Buffer(buf),
-        )
-    }
-
-    pub fn from_buf_path(buf: Vec<u8>, opts: CoreMLModelOptions, cache_dir: PathBuf) -> Self {
-        Self::Unloaded(
-            CoreMLModelInfo { opts, cache_dir },
-            CoreMLModelLoader::Buffer(buf),
-        )
+        Self::Unloaded(CoreMLModelInfo { opts }, CoreMLModelLoader::Buffer(buf))
     }
 
     pub fn load(self) -> Result<Self, Self> {
@@ -104,7 +94,7 @@ impl CoreMLModelWithState {
                     todo!()
                 }
                 CoreMLModelLoader::Buffer(vec) => {
-                    let m = info.cache_dir.join("model_cache");
+                    let m = info.opts.cache_dir.join("model_cache");
                     let Ok(_) = std::fs::write(&m, &vec) else {
                         return Err(CoreMLModelWithState::Unloaded(
                             info,
@@ -178,7 +168,6 @@ impl CoreMLModelWithState {
 #[derive(Debug, Clone)]
 pub struct CoreMLModelInfo {
     opts: CoreMLModelOptions,
-    cache_dir: PathBuf,
 }
 
 #[derive(Debug)]
