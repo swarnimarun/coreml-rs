@@ -55,11 +55,7 @@ impl CoreMLModelWithState {
             CoreMLModelLoader::ModelPath(path.as_ref().to_path_buf()),
         )
     }
-    pub fn new_compiled(
-        path: impl AsRef<Path>,
-        opts: CoreMLModelOptions,
-        cache_dir: PathBuf,
-    ) -> Self {
+    pub fn new_compiled(path: impl AsRef<Path>, opts: CoreMLModelOptions) -> Self {
         Self::Unloaded(
             CoreMLModelInfo { opts },
             CoreMLModelLoader::CompiledPath(path.as_ref().to_path_buf()),
@@ -78,7 +74,7 @@ impl CoreMLModelWithState {
         //   }
     }
 
-    pub fn from_buf(buf: Vec<u8>, opts: CoreMLModelOptions, cache_dir: PathBuf) -> Self {
+    pub fn from_buf(buf: Vec<u8>, opts: CoreMLModelOptions) -> Self {
         Self::Unloaded(CoreMLModelInfo { opts }, CoreMLModelLoader::Buffer(buf))
     }
 
