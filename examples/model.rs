@@ -25,7 +25,8 @@ pub fn main() {
     let mut m = timeit("load and compile model", || {
         let mut model_options = CoreMLModelOptions::default();
         model_options.compute_platform = ComputePlatform::CpuAndANE;
-        let mut model = CoreMLModelWithState::from_buf(file, model_options, PathBuf::from(""));
+        model_options.cache_dir = PathBuf::from("");
+        let mut model = CoreMLModelWithState::from_buf(file, model_options);
         model = timeit("load model", || model.load().unwrap());
         // println!("model description:\n{:#?}", model.description());
         return model;
@@ -48,6 +49,8 @@ pub fn main() {
     };
     println!("{m:#?}");
     m = m.unload();
+    println!("{m:#?}");
+    m = m.load().unwrap();
     println!("{m:#?}");
     // }
 
