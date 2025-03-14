@@ -25,7 +25,7 @@ pub fn main() {
     let mut m = timeit("load and compile model", || {
         let mut model_options = CoreMLModelOptions::default();
         model_options.compute_platform = ComputePlatform::CpuAndANE;
-        model_options.cache_dir = PathBuf::from("");
+        model_options.cache_dir = PathBuf::from(".");
         let mut model = CoreMLModelWithState::from_buf(file, model_options);
         model = timeit("load model", || model.load().unwrap());
         // println!("model description:\n{:#?}", model.description());
@@ -37,7 +37,7 @@ pub fn main() {
 
     // initialize the output buffer on rust side
     // for _ in 0..10 {
-    m.add_input("image", input);
+    m.add_input("image", input.clone());
     let output = timeit("predict", || {
         return m.predict();
     })
@@ -53,6 +53,11 @@ pub fn main() {
     m = m.load().unwrap();
     println!("{m:#?}");
     // }
+    m.add_input("image", input);
+    let output = timeit("predict", || {
+        return m.predict();
+    })
+    .unwrap();
 
     // very cheap doesn't need to be measured!
     // let output: Array4<f32> = Array4::from_shape_vec([1, 3, 2048, 2048], v).unwrap();

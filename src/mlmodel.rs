@@ -79,7 +79,7 @@ impl CoreMLModelWithState {
     }
 
     pub fn load(self) -> Result<Self, Self> {
-        if let Self::Unloaded(info, loader) = self {
+        if let Self::Unloaded(mut info, loader) = self {
             match loader {
                 CoreMLModelLoader::ModelPath(path_buf) => {
                     // compile and load
@@ -90,6 +90,9 @@ impl CoreMLModelWithState {
                     todo!()
                 }
                 CoreMLModelLoader::Buffer(vec) => {
+                    if info.opts.cache_dir.as_os_str().is_empty() {
+                        info.opts.cache_dir = PathBuf::from(".");
+                    }
                     if !info.opts.cache_dir.exists() {
                         _ = std::fs::remove_dir_all(&info.opts.cache_dir);
                         _ = std::fs::create_dir_all(&info.opts.cache_dir);

@@ -1,94 +1,114 @@
 import CoreML
 
-// Load and Save Data
-func LoadAndSaveData(path: RustString, to: RustString) {
-	let data = try! Data.init(contentsOf: URL(string: path.toString())!)
-	try! data.write(to: URL(string: to.toString())!)
-}
-
 class ModelDescription {
 	var description: MLModelDescription? = nil
-	init(desc: MLModelDescription) {
+	init(desc: MLModelDescription?) {
 		self.description = desc
 	}
+
+	func failedToLoad() -> Bool { return self.description == nil }
+
 	func inputs() -> RustVec<RustString> {
 		let ret = RustVec<RustString>()
-		for (_, value) in self.description!.inputDescriptionsByName {
-			let str = "\(value)".intoRustString()
-			ret.push(value: str)
+		if !failedToLoad() {
+			for (_, value) in self.description!.inputDescriptionsByName {
+				let str = "\(value)".intoRustString()
+				ret.push(value: str)
+			}
 		}
 		return ret
 	}
 	func outputs() -> RustVec<RustString> {
 		let ret = RustVec<RustString>()
-		for (_, value) in self.description!.outputDescriptionsByName {
-			let str = "\(value)".intoRustString()
-			ret.push(value: str)
+		if !failedToLoad() {
+			for (_, value) in self.description!.outputDescriptionsByName {
+				let str = "\(value)".intoRustString()
+				ret.push(value: str)
+			}
 		}
 		return ret
 	}
 	func output_type(name: RustString) -> RustString {
-		let res = self.description!.outputDescriptionsByName[name.toString()]!
-		if res.multiArrayConstraint!.dataType == MLMultiArrayDataType.float32 {
-			return "f32".intoRustString()
+		if !failedToLoad() {
+			let res = self.description!.outputDescriptionsByName[name.toString()]!
+			if res.multiArrayConstraint!.dataType == MLMultiArrayDataType.float32 {
+				return "f32".intoRustString()
+			}
 		}
 		return "".intoRustString()
 	}
 	func output_shape(name: RustString) -> RustVec<UInt> {
-		let res = self.description!.outputDescriptionsByName[name.toString()]!
-		let ret = RustVec<UInt>()
-		for r in res.multiArrayConstraint!.shape {
-			ret.push(value: UInt(truncating: r))
+		if !failedToLoad() {
+			let res = self.description!.outputDescriptionsByName[name.toString()]!
+			let ret = RustVec<UInt>()
+			for r in res.multiArrayConstraint!.shape {
+				ret.push(value: UInt(truncating: r))
+			}
+			return ret
 		}
-		return ret
+		return RustVec.init()
 	}
 	func output_names() -> RustVec<RustString> {
-		let ret = RustVec<RustString>()
-		for (key, _) in self.description!.outputDescriptionsByName {
-			ret.push(value: key.intoRustString())
+		if !failedToLoad() {
+			let ret = RustVec<RustString>()
+			for (key, _) in self.description!.outputDescriptionsByName {
+				ret.push(value: key.intoRustString())
+			}
+			return ret
 		}
-		return ret
+		return RustVec.init()
 	}
 }
 
 class ModelOutput {
-	var output: [String: Any] = [:]
-	init(output: [String: Any]) {
+	var output: [String: Any]? = [:]
+	init(output: [String: Any]?) {
 		self.output = output
 	}
+	func hasFailedToLoad() -> Bool {
+		return self.output == nil
+	}
 	func outputDescription() -> RustVec<RustString> {
+		if hasFailedToLoad() { return RustVec.init() }
+		let output = self.output!
 		let ret = RustVec<RustString>()
-		for key in self.output.keys {
-			let str = "\(key):\(self.output[key]!)".intoRustString()
+		for key in output.keys {
+			let str = "\(key):\(output[key]!)".intoRustString()
 			ret.push(value: str)
 		}
 		return ret
 	}
 	func outputF32(name: RustString) -> RustVec<Float32> {
-		let output = (self.output[name.toString()]! as? MLMultiArray)!
-		let l = output.count
+		if hasFailedToLoad() { return RustVec.init() }
+		let output = self.output!
+		let out = (output[name.toString()]! as? MLMultiArray)!
+		let l = out.count
 		var v = RustVec<Float32>()
-		output.withUnsafeMutableBytes { ptr, strides in
+		out.withUnsafeMutableBytes { ptr, strides in
 			let p = ptr.baseAddress!.assumingMemoryBound(to: Float32.self)
 			v = rust_vec_from_ptr_f32(p, UInt(l))
 		}
 		return v
 	}
 	func outputI32(name: RustString) -> RustVec<Int32> {
-		let output = (self.output[name.toString()]! as? MLMultiArray)!
-		let l = output.count
+		if hasFailedToLoad() { return RustVec.init() }
+		let output = self.output!
+		let out = (output[name.toString()]! as? MLMultiArray)!
+		let l = out.count
 		var v = RustVec<Int32>()
-		output.withUnsafeMutableBytes { ptr, strides in
+		out.withUnsafeMutableBytes { ptr, strides in
 			let p = ptr.baseAddress!.assumingMemoryBound(to: Int32.self)
 			v = rust_vec_from_ptr_i32(p, UInt(l))
 		}
 		return v
 	}
 	func outputU16(name: RustString) -> RustVec<UInt16> {
-		let output = (self.output[name.toString()]! as? MLMultiArray)!
-		let l = output.count
+		if hasFailedToLoad() { return RustVec.init() }
+		let output = self.output!
+		let out = (output[name.toString()]! as? MLMultiArray)!
+		let l = out.count
 		var v = RustVec<UInt16>()
-		output.withUnsafeMutableBytes { ptr, strides in
+		out.withUnsafeMutableBytes { ptr, strides in
 			let p = ptr.baseAddress!.assumingMemoryBound(to: UInt16.self)
 			v = rust_vec_from_ptr_u16(p, UInt(l))
 		}
@@ -116,10 +136,15 @@ func initWithCompiledAsset(
 		deallocator: Data.Deallocator.custom { ptr, len in
 			return ()
 		})
-	let m = Model.init()
-	m.modelCompiledAsset = try! MLModelAsset.init(specification: data)
-	m.computeUnits = computeUnits
-	return m
+	do {
+		let m = Model.init(failedToLoad: false)
+		m.modelCompiledAsset = try MLModelAsset.init(specification: data)
+		m.computeUnits = computeUnits
+		return m
+	} catch {
+		let m = Model.init(failedToLoad: false)
+		return m
+	}
 }
 
 func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) -> Model {
@@ -140,9 +165,13 @@ func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) ->
 		compiledPath = URL(string: path.toString())!
 	} else {
 		let url = URL(string: path.toString())!
-		compiledPath = try! MLModel.compileModel(at: url)
+		do {
+			compiledPath = try MLModel.compileModel(at: url)
+		} catch {
+			return Model.init(failedToLoad: true)
+		}
 	}
-	let m = Model.init()
+	let m = Model.init(failedToLoad: false)
 	m.compiledPath = compiledPath
 	m.computeUnits = computeUnits
 	return m
@@ -156,39 +185,55 @@ class Model: @unchecked Sendable {
 	var outputs: [String: Any] = [:]
 	var computeUnits: MLComputeUnits = .cpuAndNeuralEngine
 
-	init() {}
+	var failedToLoad: Bool
+	init(failedToLoad: Bool) {
+		self.failedToLoad = failedToLoad
+	}
 
-	func load() {
+	func hasFailedToLoad() -> Bool {
+		return self.failedToLoad
+	}
+
+	func load() -> Bool {
+		if hasFailedToLoad() { return false }
 		let config = MLModelConfiguration.init()
 		config.computeUnits = self.computeUnits
-		if self.compiledPath == nil {
-			let semaphore = DispatchSemaphore(value: 0)
-			Task { [weak self] in
-				guard let self else { return }
-				let asset = self.modelCompiledAsset!
-				let res = try! await MLModel.load(asset: asset, configuration: config)
-				self.model = res
-				semaphore.signal()
+		do {
+			if self.compiledPath == nil {
+				let semaphore = DispatchSemaphore(value: 0)
+				Task { [weak self] in
+					guard let self else { return }
+					let asset = self.modelCompiledAsset!
+					let res = try await MLModel.load(asset: asset, configuration: config)
+					self.model = res
+					semaphore.signal()
+				}
+				semaphore.wait()
+			} else {
+				let loadedModel = try MLModel(contentsOf: self.compiledPath!, configuration: config)
+				self.model = loadedModel
 			}
-			semaphore.wait()
-		} else {
-			let loadedModel = try! MLModel(contentsOf: self.compiledPath!, configuration: config)
-			self.model = loadedModel
+			return true
+		} catch {
+			return false
 		}
 	}
 
-	func unload() {
+	func unload() -> Bool {
+		if hasFailedToLoad() { return false }
 		self.model = nil
+		return true
 	}
 
 	func description() -> ModelDescription {
-		return ModelDescription(desc: self.model!.modelDescription)
+		return ModelDescription(desc: self.model?.modelDescription)
 	}
 
 	func bindOutputF32(
 		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
 		len: UInt
-	) {
+	) -> Bool {
+		if hasFailedToLoad() { return false }
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -208,12 +253,15 @@ class Model: @unchecked Sendable {
 				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
 				strides: stride, deallocator: deallocMultiArrayRust)
 			self.outputs[featureName.toString()] = array
+			return true
 		} catch {
 			print("Unexpected output error: \(error)")
+			return false
 		}
 	}
 
 	func predict() -> ModelOutput {
+		// if hasFailedToLoad() { return false }
 		do {
 			let input = try MLDictionaryFeatureProvider.init(dictionary: self.dict)
 			let opts = MLPredictionOptions.init()
@@ -225,14 +273,14 @@ class Model: @unchecked Sendable {
 			return ModelOutput(output: outputs)
 		} catch {
 			print("Unexpected predict error: \(error)")
-			return ModelOutput(output: self.outputs)
+			return ModelOutput(output: nil)
 		}
 	}
 
 	func bindInputF32(
 		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
 		len: UInt
-	) {
+	) -> Bool {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -253,14 +301,16 @@ class Model: @unchecked Sendable {
 				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
 			self.dict[featureName.toString()] = value
+			return true
 		} catch {
 			print("Unexpected input error; \(error)")
+			return false
 		}
 	}
 
 	func bindInputI32(
 		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Int32>, len: UInt
-	) {
+	) -> Bool {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -281,15 +331,17 @@ class Model: @unchecked Sendable {
 				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
 			self.dict[featureName.toString()] = value
+			return true
 		} catch {
 			print("Unexpected error; \(error)")
+			return false
 		}
 	}
 
 	func bindInputU16(
 		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<UInt16>,
 		len: UInt
-	) {
+	) -> Bool {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
@@ -310,8 +362,10 @@ class Model: @unchecked Sendable {
 				strides: stride, deallocator: deallocMultiArrayRust)
 			let value = MLFeatureValue(multiArray: array)
 			self.dict[featureName.toString()] = value
+			return true
 		} catch {
 			print("Unexpected error; \(error)")
+			return false
 		}
 	}
 }

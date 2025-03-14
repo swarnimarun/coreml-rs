@@ -26,21 +26,43 @@ pub mod swift {
         pub fn modelWithPath(path: String, compute: ComputePlatform, compiled: bool) -> Model;
         #[swift_bridge(swift_name = "initWithCompiledAsset")]
         pub fn modelWithAssets(ptr: *mut u8, len: isize, compute: ComputePlatform) -> Model;
-        #[swift_bridge(swift_name = "LoadAndSaveData")]
-        pub fn load_save(path: String, to: String);
     }
 
     extern "Swift" {
         type Model;
 
-        fn bindOutputF32(&self, shape: Vec<i32>, featureName: String, data: *mut f32, len: usize);
-        fn bindInputF32(&self, shape: Vec<i32>, featureName: String, data: *mut f32, len: usize);
-        fn bindInputI32(&self, shape: Vec<i32>, featureName: String, data: *mut i32, len: usize);
-        fn bindInputU16(&self, shape: Vec<i32>, featureName: String, data: *mut u16, len: usize);
+        fn bindOutputF32(
+            &self,
+            shape: Vec<i32>,
+            featureName: String,
+            data: *mut f32,
+            len: usize,
+        ) -> bool;
+        fn bindInputF32(
+            &self,
+            shape: Vec<i32>,
+            featureName: String,
+            data: *mut f32,
+            len: usize,
+        ) -> bool;
+        fn bindInputI32(
+            &self,
+            shape: Vec<i32>,
+            featureName: String,
+            data: *mut i32,
+            len: usize,
+        ) -> bool;
+        fn bindInputU16(
+            &self,
+            shape: Vec<i32>,
+            featureName: String,
+            data: *mut u16,
+            len: usize,
+        ) -> bool;
         #[swift_bridge(swift_name = "load")]
-        fn modelLoad(&mut self);
+        fn modelLoad(&mut self) -> bool;
         #[swift_bridge(swift_name = "unload")]
-        fn modelUnload(&mut self);
+        fn modelUnload(&mut self) -> bool;
         #[swift_bridge(swift_name = "description")]
         fn modelDescription(&self) -> ModelDescription;
         #[swift_bridge(swift_name = "predict")]
