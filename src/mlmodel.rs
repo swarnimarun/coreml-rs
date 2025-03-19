@@ -1,17 +1,31 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
-
-use ndarray::Array;
-
 use crate::{
     ffi::{modelWithAssets, ComputePlatform, Model},
     mlarray::MLArray,
-    swift::modelWithPath,
 };
+use flate2::Compression;
+use ndarray::Array;
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
+// use lz4_flex::block::{compress_prepend_size, decompress_size_prepended, DecompressError};
 
 pub use crate::swift::MLModelOutput;
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum CoreMLError {
+    #[error("IoError: {0}")]
+    IoError(std::io::Error),
+    // #[error("Lz4 Decompression Error: {0}")]
+    // Lz4DecompressError(DecompressError),
+    #[error("UnknownError: {0}")]
+    UnknownError(String),
+    #[error("UnknownError: {0}")]
+    UnknownErrorStatic(&'static str),
+}
 
 #[derive(Default, Clone)]
 pub struct CoreMLModelOptions {
@@ -60,18 +74,6 @@ impl CoreMLModelWithState {
             CoreMLModelInfo { opts },
             CoreMLModelLoader::CompiledPath(path.as_ref().to_path_buf()),
         )
-        // Self {
-        //       path: None,
-        //       save_path: None,
-        //       model: Some(modelWithPath(
-        //           path.as_ref().display().to_string(),
-        //           opts.compute_platform,
-        //           true,
-        //       )),
-        //       opts,
-        //       outputs: Default::default(),
-        //       loaded: false,
-        //   }
     }
 
     pub fn from_buf(buf: Vec<u8>, opts: CoreMLModelOptions) -> Self {
@@ -79,59 +81,78 @@ impl CoreMLModelWithState {
     }
 
     pub fn load(self) -> Result<Self, Self> {
-        if let Self::Unloaded(mut info, loader) = self {
-            match loader {
-                CoreMLModelLoader::ModelPath(path_buf) => {
-                    // compile and load
-                    todo!()
+        let Self::Unloaded(mut info, loader) = self else {
+            return Ok(self);
+        };
+        match loader {
+            CoreMLModelLoader::ModelPath(path_buf) => {
+                // compile and load
+                todo!()
+            }
+            CoreMLModelLoader::CompiledPath(path_buf) => {
+                // assume compiled model path provided!
+                todo!()
+            }
+            CoreMLModelLoader::Buffer(vec) => {
+                if info.opts.cache_dir.as_os_str().is_empty() {
+                    info.opts.cache_dir = PathBuf::from(".");
                 }
-                CoreMLModelLoader::CompiledPath(path_buf) => {
-                    // assume compiled model path provided!
-                    todo!()
+                if !info.opts.cache_dir.exists() {
+                    _ = std::fs::remove_dir_all(&info.opts.cache_dir);
+                    _ = std::fs::create_dir_all(&info.opts.cache_dir);
                 }
-                CoreMLModelLoader::Buffer(vec) => {
-                    if info.opts.cache_dir.as_os_str().is_empty() {
-                        info.opts.cache_dir = PathBuf::from(".");
-                    }
-                    if !info.opts.cache_dir.exists() {
-                        _ = std::fs::remove_dir_all(&info.opts.cache_dir);
-                        _ = std::fs::create_dir_all(&info.opts.cache_dir);
-                    }
-                    // pick the file specified, if it's a folder/dir append model_cache
-                    let m = if !info.opts.cache_dir.is_dir() {
-                        info.opts.cache_dir.clone()
-                    } else {
-                        info.opts.cache_dir.join("model_cache")
-                    };
-                    match std::fs::write(&m, &vec) {
-                        Ok(_) => {}
-                        Err(err) => {
-                            return Err(CoreMLModelWithState::Unloaded(
-                                info,
-                                CoreMLModelLoader::Buffer(vec),
-                            ));
-                        }
-                    };
-                    let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
-                    coreml_model.model.modelLoad();
-                    let loader = CoreMLModelLoader::BufferPath(m);
-                    Ok(Self::Loaded(coreml_model, info, loader))
-                }
-                CoreMLModelLoader::BufferPath(u) => {
-                    let Ok(vec) = std::fs::read(&u) else {
+                // pick the file specified, if it's a folder/dir append model_cache
+                let m = if !info.opts.cache_dir.is_dir() {
+                    info.opts.cache_dir.clone()
+                } else {
+                    info.opts.cache_dir.join("model_cache")
+                };
+                match std::fs::File::create(&m)
+                    .map_err(|io| CoreMLError::IoError(io))
+                    .map(|file| {
+                        flate2::write::ZlibEncoder::new(file, Compression::best())
+                            .write_all(&vec)
+                            .map_err(CoreMLError::IoError)
+                    }) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        eprintln!("failed to load the model from the buffer: {err}");
                         return Err(CoreMLModelWithState::Unloaded(
                             info,
-                            CoreMLModelLoader::BufferPath(u),
+                            CoreMLModelLoader::Buffer(vec),
                         ));
-                    };
-                    let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
-                    coreml_model.model.modelLoad();
-                    let loader = CoreMLModelLoader::BufferPath(u);
-                    Ok(Self::Loaded(coreml_model, info, loader))
+                    }
+                };
+                let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
+                coreml_model.model.modelLoad();
+                let loader = CoreMLModelLoader::BufferPath(m);
+                Ok(Self::Loaded(coreml_model, info, loader))
+            }
+            CoreMLModelLoader::BufferPath(u) => {
+                match std::fs::File::open(&u)
+                    .map_err(|io| CoreMLError::IoError(io))
+                    .and_then(|file| {
+                        let mut vec = vec![];
+                        _ = flate2::read::ZlibDecoder::new(file)
+                            .read_to_end(&mut vec)
+                            .map_err(|io| CoreMLError::IoError(io))?;
+                        Ok(vec)
+                    }) {
+                    Ok(vec) => {
+                        let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
+                        coreml_model.model.modelLoad();
+                        let loader = CoreMLModelLoader::BufferPath(u);
+                        Ok(Self::Loaded(coreml_model, info, loader))
+                    }
+                    Err(err) => {
+                        eprintln!("failed to load the model from cached buffer: {err}");
+                        Err(CoreMLModelWithState::Unloaded(
+                            info,
+                            CoreMLModelLoader::BufferPath(u),
+                        ))
+                    }
                 }
             }
-        } else {
-            Ok(self)
         }
     }
 
@@ -142,13 +163,6 @@ impl CoreMLModelWithState {
             self
         }
     }
-
-    // pub fn from_buf_indirect(buf: &[u8], save_path: PathBuf, opts: CoreMLModelOptions) -> Self {
-    //     let _ = std::fs::write(&save_path, buf);
-    //     let mut m = Self::new_compiled(&save_path, opts);
-    //     m.save_path = Some(save_path);
-    //     m
-    // }
 
     pub fn description(&self) -> HashMap<&str, Vec<String>> {
         match self {
@@ -184,7 +198,7 @@ pub struct CoreMLModelInfo {
 #[derive(Debug)]
 pub struct CoreMLModel {
     model: Model,
-    save_path: Option<PathBuf>,
+    // save_path: Option<PathBuf>,
     outputs: HashMap<String, (&'static str, Vec<usize>)>,
 }
 
@@ -196,14 +210,6 @@ impl std::fmt::Debug for Model {
     }
 }
 
-// impl Drop for CoreMLModel {
-//     fn drop(&mut self) {
-//         if let Some(save_path) = &self.save_path {
-//             _ = std::fs::remove_dir_all(save_path);
-//         }
-//     }
-// }
-
 impl CoreMLModel {
     pub fn load_buffer(mut buf: Vec<u8>, info: CoreMLModelInfo) -> Self {
         let coreml_model = Self {
@@ -212,39 +218,52 @@ impl CoreMLModel {
                 buf.len() as isize,
                 info.opts.compute_platform,
             ),
-            save_path: None,
+            // save_path: None,
             outputs: Default::default(),
         };
         std::mem::forget(buf);
         coreml_model
     }
 
-    pub fn add_input(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) {
+    pub fn add_input(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) -> bool {
         // route input correctly
         let input: MLArray = input.into();
         let name = tag.as_ref().to_string();
         let shape = input.shape().into_iter().map(|s| *s as i32).collect();
         if input.is_f32() {
             let mut data = input.into_raw_vec_f32();
-            self.model
-                .bindInputF32(shape, name, data.as_mut_ptr(), data.capacity());
+            if !self
+                .model
+                .bindInputF32(shape, name, data.as_mut_ptr(), data.capacity())
+            {
+                return false;
+            }
             std::mem::forget(data);
         } else if input.is_f16() {
             let mut data = input.into_raw_vec_u16();
-            self.model
-                .bindInputU16(shape, name, data.as_mut_ptr(), data.capacity());
+            if !self
+                .model
+                .bindInputU16(shape, name, data.as_mut_ptr(), data.capacity())
+            {
+                return false;
+            }
             std::mem::forget(data);
         } else if input.is_i32() {
             let mut data = input.into_raw_vec_i32();
-            self.model
-                .bindInputI32(shape, name, data.as_mut_ptr(), data.capacity());
+            if !self
+                .model
+                .bindInputI32(shape, name, data.as_mut_ptr(), data.capacity())
+            {
+                return false;
+            }
             std::mem::forget(data);
         } else {
             panic!("unreachable!")
         }
+        true
     }
 
-    pub fn add_output_f32(&mut self, tag: impl AsRef<str>, out: impl Into<MLArray>) {
+    pub fn add_output_f32(&mut self, tag: impl AsRef<str>, out: impl Into<MLArray>) -> bool {
         let arr: MLArray = out.into();
         let shape = arr.shape();
         self.outputs
@@ -254,8 +273,11 @@ impl CoreMLModel {
         let name = tag.as_ref().to_string();
         let ptr = data.as_mut_ptr();
         let len = data.capacity();
-        self.model.bindOutputF32(shape, name, ptr, len);
+        if !self.model.bindOutputF32(shape, name, ptr, len) {
+            return false;
+        }
         std::mem::forget(data);
+        true
     }
 
     pub fn predict(&mut self) -> Option<MLModelOutput> {
@@ -276,12 +298,15 @@ impl CoreMLModel {
                 .outputs
                 .clone()
                 .into_iter()
-                .map(|(key, (ty, shape))| {
-                    assert_eq!(ty, "f32", "non f32 types are currently not supported");
+                .filter_map(|(key, (ty, shape))| {
+                    if ty != "f32" {
+                        eprintln!("warning: non-f32 types aren't supported, and will be skipped in the output");
+                        return None;
+                    }
                     let name = key.clone();
                     let out = output.outputF32(name);
-                    let array = Array::from_shape_vec(shape, out).unwrap();
-                    (key, array.into())
+                    let array = Array::from_shape_vec(shape, out).ok()?;
+                    Some((key, array.into()))
                 })
                 .collect(),
             model_output: output,

@@ -1,6 +1,6 @@
 [package]
 name = "coreml-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "CoreML bindings for Rust using swift-bridge to maximize performance"
 license-file = "LICENSE"
@@ -8,10 +8,13 @@ license-file = "LICENSE"
 [dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
 bytemuck = "1.21.0"
+flate2 = "1.1.0"
 half = { version = "2.4.1", features = ["alloc", "serde", "zerocopy"] }
+lz4_flex = "0.11.3"
 ndarray = { version = "0.15.6", features = ["serde", "blas"] }
 num = "0.4.3"
 swift-bridge = "0.1"
+thiserror = "2.0.12"
 
 [build-dependencies]
 swift-bridge-build = "0.1"

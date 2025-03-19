@@ -35,8 +35,6 @@ pub fn main() {
     let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
     input.fill(1.0f32);
 
-    // initialize the output buffer on rust side
-    // for _ in 0..10 {
     m.add_input("image", input.clone());
     let output = timeit("predict", || {
         return m.predict();
@@ -47,14 +45,22 @@ pub fn main() {
         MLArray::FloatArray(FloatMLArray::Array(array)) => array,
         _ => panic!("unreachable"),
     };
-    println!("{m:#?}");
-    m = m.unload();
-    println!("{m:#?}");
-    m = m.load().unwrap();
-    println!("{m:#?}");
-    // }
+
+    m = timeit("unload model", || {
+        println!("{m:#?}");
+        let r = m.unload();
+        println!("{r:#?}");
+        r
+    });
+
+    m = timeit("load from cache model", || {
+        let r = m.load().unwrap();
+        println!("{r:#?}");
+        r
+    });
+
     m.add_input("image", input);
-    let output = timeit("predict", || {
+    let _ = timeit("predict", || {
         return m.predict();
     })
     .unwrap();

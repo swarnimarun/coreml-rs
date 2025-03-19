@@ -31,6 +31,7 @@ pub mod swift {
     extern "Swift" {
         type Model;
 
+        #[must_use()]
         fn bindOutputF32(
             &self,
             shape: Vec<i32>,
@@ -38,6 +39,7 @@ pub mod swift {
             data: *mut f32,
             len: usize,
         ) -> bool;
+        #[must_use()]
         fn bindInputF32(
             &self,
             shape: Vec<i32>,
@@ -45,6 +47,7 @@ pub mod swift {
             data: *mut f32,
             len: usize,
         ) -> bool;
+        #[must_use()]
         fn bindInputI32(
             &self,
             shape: Vec<i32>,
@@ -52,6 +55,7 @@ pub mod swift {
             data: *mut i32,
             len: usize,
         ) -> bool;
+        #[must_use()]
         fn bindInputU16(
             &self,
             shape: Vec<i32>,
@@ -59,12 +63,16 @@ pub mod swift {
             data: *mut u16,
             len: usize,
         ) -> bool;
+        #[must_use()]
         #[swift_bridge(swift_name = "load")]
         fn modelLoad(&mut self) -> bool;
+        #[must_use()]
         #[swift_bridge(swift_name = "unload")]
         fn modelUnload(&mut self) -> bool;
+        #[must_use()]
         #[swift_bridge(swift_name = "description")]
         fn modelDescription(&self) -> ModelDescription;
+        #[must_use()]
         #[swift_bridge(swift_name = "predict")]
         fn modelRun(&self) -> ModelOutput;
     }
@@ -88,8 +96,6 @@ pub mod swift {
         fn outputI32(&self, name: String) -> Vec<i32>;
     }
 }
-
-pub use swift::{modelWithAssets, modelWithPath};
 
 impl std::default::Default for ComputePlatform {
     fn default() -> Self {
