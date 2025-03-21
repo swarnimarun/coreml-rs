@@ -1,6 +1,6 @@
 [package]
 name = "coreml-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "CoreML bindings for Rust using swift-bridge to maximize performance"
 license-file = "LICENSE"
