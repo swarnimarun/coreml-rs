@@ -25,6 +25,12 @@ pub enum CoreMLError {
     UnknownError(String),
     #[error("UnknownError: {0}")]
     UnknownErrorStatic(&'static str),
+    #[error("ModelNotLoaded: coreml model not loaded into session")]
+    ModelNotLoaded,
+    #[error("FailedToLoad: coreml model couldn't be loaded: {0}")]
+    FailedToLoadStatic(&'static str, CoreMLModelWithState),
+    #[error("FailedToLoad: coreml model couldn't be loaded: {0}")]
+    FailedToLoad(String, CoreMLModelWithState),
 }
 
 #[derive(Default, Clone)]
@@ -80,7 +86,7 @@ impl CoreMLModelWithState {
         Self::Unloaded(CoreMLModelInfo { opts }, CoreMLModelLoader::Buffer(buf))
     }
 
-    pub fn load(self) -> Result<Self, Self> {
+    pub fn load(self) -> Result<Self, CoreMLError> {
         let Self::Unloaded(mut info, loader) = self else {
             return Ok(self);
         };
@@ -116,10 +122,9 @@ impl CoreMLModelWithState {
                     }) {
                     Ok(_) => {}
                     Err(err) => {
-                        eprintln!("failed to load the model from the buffer: {err}");
-                        return Err(CoreMLModelWithState::Unloaded(
-                            info,
-                            CoreMLModelLoader::Buffer(vec),
+                        return Err(CoreMLError::FailedToLoad(
+                            format!("failed to load the model from the buffer: {err}"),
+                            CoreMLModelWithState::Unloaded(info, CoreMLModelLoader::Buffer(vec)),
                         ));
                     }
                 };
@@ -144,13 +149,10 @@ impl CoreMLModelWithState {
                         let loader = CoreMLModelLoader::BufferPath(u);
                         Ok(Self::Loaded(coreml_model, info, loader))
                     }
-                    Err(err) => {
-                        eprintln!("failed to load the model from cached buffer: {err}");
-                        Err(CoreMLModelWithState::Unloaded(
-                            info,
-                            CoreMLModelLoader::BufferPath(u),
-                        ))
-                    }
+                    Err(err) => Err(CoreMLError::FailedToLoad(
+                        format!("failed to load the model from cached buffer path: {err}"),
+                        CoreMLModelWithState::Unloaded(info, CoreMLModelLoader::BufferPath(u)),
+                    )),
                 }
             }
         }
@@ -164,27 +166,28 @@ impl CoreMLModelWithState {
         }
     }
 
-    pub fn description(&self) -> HashMap<&str, Vec<String>> {
+    pub fn description(&self) -> Result<HashMap<&str, Vec<String>>, CoreMLError> {
         match self {
-            CoreMLModelWithState::Unloaded(_, _) => Default::default(),
-            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => core_mlmodel.description(),
+            CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
+            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.description()),
         }
     }
 
-    pub fn add_input(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) -> bool {
+    pub fn add_input(
+        &mut self,
+        tag: impl AsRef<str>,
+        input: impl Into<MLArray>,
+    ) -> Result<(), CoreMLError> {
         match self {
-            CoreMLModelWithState::Unloaded(_, _) => false,
-            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => {
-                core_mlmodel.add_input(tag, input);
-                true
-            }
+            CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
+            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => core_mlmodel.add_input(tag, input),
         }
     }
 
-    pub fn predict(&mut self) -> Result<MLModelOutput, ()> {
+    pub fn predict(&mut self) -> Result<MLModelOutput, CoreMLError> {
         match self {
-            CoreMLModelWithState::Unloaded(_, _) => Err(()),
-            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => core_mlmodel.predict().ok_or(()),
+            CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
+            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => core_mlmodel.predict(),
         }
     }
 }
@@ -225,7 +228,11 @@ impl CoreMLModel {
         coreml_model
     }
 
-    pub fn add_input(&mut self, tag: impl AsRef<str>, input: impl Into<MLArray>) -> bool {
+    pub fn add_input(
+        &mut self,
+        tag: impl AsRef<str>,
+        input: impl Into<MLArray>,
+    ) -> Result<(), CoreMLError> {
         // route input correctly
         let input: MLArray = input.into();
         let name = tag.as_ref().to_string();
@@ -236,7 +243,9 @@ impl CoreMLModel {
                 .model
                 .bindInputF32(shape, name, data.as_mut_ptr(), data.capacity())
             {
-                return false;
+                return Err(CoreMLError::UnknownErrorStatic(
+                    "failed to bind input to model",
+                ));
             }
             std::mem::forget(data);
         } else if input.is_f16() {
@@ -245,7 +254,9 @@ impl CoreMLModel {
                 .model
                 .bindInputU16(shape, name, data.as_mut_ptr(), data.capacity())
             {
-                return false;
+                return Err(CoreMLError::UnknownErrorStatic(
+                    "failed to bind input to model",
+                ));
             }
             std::mem::forget(data);
         } else if input.is_i32() {
@@ -254,13 +265,17 @@ impl CoreMLModel {
                 .model
                 .bindInputI32(shape, name, data.as_mut_ptr(), data.capacity())
             {
-                return false;
+                return Err(CoreMLError::UnknownErrorStatic(
+                    "failed to bind input to model",
+                ));
             }
             std::mem::forget(data);
         } else {
-            panic!("unreachable!")
+            return Err(CoreMLError::UnknownErrorStatic(
+                "failed to bind input to model",
+            ));
         }
-        true
+        Ok(())
     }
 
     pub fn add_output_f32(&mut self, tag: impl AsRef<str>, out: impl Into<MLArray>) -> bool {
@@ -280,7 +295,7 @@ impl CoreMLModel {
         true
     }
 
-    pub fn predict(&mut self) -> Option<MLModelOutput> {
+    pub fn predict(&mut self) -> Result<MLModelOutput, CoreMLError> {
         let desc = self.model.modelDescription();
         for name in desc.output_names() {
             let output_shape = desc.output_shape(name.clone());
@@ -289,11 +304,18 @@ impl CoreMLModel {
                 "f32" => {
                     self.add_output_f32(name, Array::<f32, _>::zeros(output_shape));
                 }
-                _ => panic!("not supported"),
+                _ => {
+                    return Err(CoreMLError::UnknownErrorStatic(
+                        "non-f32 output types are not supported (yet)!",
+                    ))
+                }
             }
         }
         let output = self.model.modelRun();
-        Some(MLModelOutput {
+        if let Some(err) = output.getError() {
+            return Err(CoreMLError::UnknownError(err));
+        }
+        Ok(MLModelOutput {
             outputs: self
                 .outputs
                 .clone()

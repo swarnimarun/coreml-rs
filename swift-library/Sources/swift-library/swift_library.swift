@@ -62,11 +62,19 @@ class ModelDescription {
 
 class ModelOutput {
 	var output: [String: Any]? = [:]
-	init(output: [String: Any]?) {
+	var error: (any Error)? = nil
+	init(output: [String: Any]?, error: (any Error)?) {
 		self.output = output
+		self.error = error
 	}
 	func hasFailedToLoad() -> Bool {
-		return self.output == nil
+		return self.error != nil
+	}
+	func getError() -> Optional<RustString> {
+		if self.error == nil {
+			return nil
+		}
+		return "\(self.error!)".intoRustString()
 	}
 	func outputDescription() -> RustVec<RustString> {
 		if hasFailedToLoad() { return RustVec.init() }
@@ -270,10 +278,10 @@ class Model: @unchecked Sendable {
 			let outputs = self.outputs
 			self.outputs = [:]
 			self.dict = [:]
-			return ModelOutput(output: outputs)
+			return ModelOutput(output: outputs, error: nil)
 		} catch {
-			print("Unexpected predict error: \(error)")
-			return ModelOutput(output: nil)
+			// print("Unexpected predict error: \(error)")
+			return ModelOutput(output: nil, error: error)
 		}
 	}
 

@@ -47,15 +47,15 @@ pub fn main() {
     };
 
     m = timeit("unload model", || {
-        println!("{m:#?}");
+        // println!("{m:#?}");
         let r = m.unload();
-        println!("{r:#?}");
+        // println!("{r:#?}");
         r
     });
 
     m = timeit("load from cache model", || {
         let r = m.load().unwrap();
-        println!("{r:#?}");
+        // println!("{r:#?}");
         r
     });
 

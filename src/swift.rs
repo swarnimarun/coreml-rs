@@ -94,6 +94,7 @@ pub mod swift {
         fn outputF32(&self, name: String) -> Vec<f32>;
         fn outputU16(&self, name: String) -> Vec<u16>;
         fn outputI32(&self, name: String) -> Vec<i32>;
+        fn getError(&self) -> Option<String>;
     }
 }
 
