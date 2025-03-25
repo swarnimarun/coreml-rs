@@ -59,7 +59,7 @@ pub enum CoreMLModelLoader {
     ModelPath(PathBuf),
     CompiledPath(PathBuf),
     Buffer(Vec<u8>),
-    BufferPath(PathBuf),
+    BufferToDisk(PathBuf),
 }
 
 #[derive(Debug)]
@@ -87,7 +87,7 @@ impl CoreMLModelWithState {
     }
 
     pub fn load(self) -> Result<Self, CoreMLError> {
-        let Self::Unloaded(mut info, loader) = self else {
+        let Self::Unloaded(info, loader) = self else {
             return Ok(self);
         };
         match loader {
@@ -100,40 +100,12 @@ impl CoreMLModelWithState {
                 todo!()
             }
             CoreMLModelLoader::Buffer(vec) => {
-                if info.opts.cache_dir.as_os_str().is_empty() {
-                    info.opts.cache_dir = PathBuf::from(".");
-                }
-                if !info.opts.cache_dir.exists() {
-                    _ = std::fs::remove_dir_all(&info.opts.cache_dir);
-                    _ = std::fs::create_dir_all(&info.opts.cache_dir);
-                }
-                // pick the file specified, if it's a folder/dir append model_cache
-                let m = if !info.opts.cache_dir.is_dir() {
-                    info.opts.cache_dir.clone()
-                } else {
-                    info.opts.cache_dir.join("model_cache")
-                };
-                match std::fs::File::create(&m)
-                    .map_err(|io| CoreMLError::IoError(io))
-                    .map(|file| {
-                        flate2::write::ZlibEncoder::new(file, Compression::best())
-                            .write_all(&vec)
-                            .map_err(CoreMLError::IoError)
-                    }) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        return Err(CoreMLError::FailedToLoad(
-                            format!("failed to load the model from the buffer: {err}"),
-                            CoreMLModelWithState::Unloaded(info, CoreMLModelLoader::Buffer(vec)),
-                        ));
-                    }
-                };
-                let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
+                let mut coreml_model = CoreMLModel::load_buffer(vec.clone(), info.clone());
                 coreml_model.model.modelLoad();
-                let loader = CoreMLModelLoader::BufferPath(m);
+                let loader = CoreMLModelLoader::Buffer(vec);
                 Ok(Self::Loaded(coreml_model, info, loader))
             }
-            CoreMLModelLoader::BufferPath(u) => {
+            CoreMLModelLoader::BufferToDisk(u) => {
                 match std::fs::File::open(&u)
                     .map_err(|io| CoreMLError::IoError(io))
                     .and_then(|file| {
@@ -146,23 +118,74 @@ impl CoreMLModelWithState {
                     Ok(vec) => {
                         let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
                         coreml_model.model.modelLoad();
-                        let loader = CoreMLModelLoader::BufferPath(u);
+                        let loader = CoreMLModelLoader::BufferToDisk(u);
                         Ok(Self::Loaded(coreml_model, info, loader))
                     }
                     Err(err) => Err(CoreMLError::FailedToLoad(
                         format!("failed to load the model from cached buffer path: {err}"),
-                        CoreMLModelWithState::Unloaded(info, CoreMLModelLoader::BufferPath(u)),
+                        CoreMLModelWithState::Unloaded(info, CoreMLModelLoader::BufferToDisk(u)),
                     )),
                 }
             }
         }
     }
 
+    /// Doesn't unload the model buffer in case model is loaded from a buffer
     pub fn unload(self) -> Self {
         if let Self::Loaded(_, info, loader) = self {
             Self::Unloaded(info, loader)
         } else {
             self
+        }
+    }
+
+    /// Unloads the model buffer to the disk, at cache_dir
+    pub fn unload_to_disk(self) -> Result<Self, CoreMLError> {
+        match self {
+            Self::Loaded(_, mut info, loader) | Self::Unloaded(mut info, loader) => {
+                let loader = {
+                    match loader {
+                        CoreMLModelLoader::ModelPath(path_buf) => todo!("to be implemented"),
+                        CoreMLModelLoader::CompiledPath(path_buf) => todo!("to be implemented"),
+                        CoreMLModelLoader::Buffer(vec) => {
+                            if info.opts.cache_dir.as_os_str().is_empty() {
+                                info.opts.cache_dir = PathBuf::from(".");
+                            }
+                            if !info.opts.cache_dir.exists() {
+                                _ = std::fs::remove_dir_all(&info.opts.cache_dir);
+                                _ = std::fs::create_dir_all(&info.opts.cache_dir);
+                            }
+                            // pick the file specified, if it's a folder/dir append model_cache
+                            let m = if !info.opts.cache_dir.is_dir() {
+                                info.opts.cache_dir.clone()
+                            } else {
+                                info.opts.cache_dir.join("model_cache")
+                            };
+                            match std::fs::File::create(&m)
+                                .map_err(|io| CoreMLError::IoError(io))
+                                .map(|file| {
+                                    flate2::write::ZlibEncoder::new(file, Compression::best())
+                                        .write_all(&vec)
+                                        .map_err(CoreMLError::IoError)
+                                }) {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    return Err(CoreMLError::FailedToLoad(
+                                        format!("failed to load the model from the buffer: {err}"),
+                                        CoreMLModelWithState::Unloaded(
+                                            info,
+                                            CoreMLModelLoader::Buffer(vec),
+                                        ),
+                                    ));
+                                }
+                            };
+                            CoreMLModelLoader::BufferToDisk(m)
+                        }
+                        m @ CoreMLModelLoader::BufferToDisk(_) => m,
+                    }
+                };
+                Ok(Self::Unloaded(info, loader))
+            }
         }
     }
 
