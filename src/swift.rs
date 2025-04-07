@@ -75,6 +75,8 @@ pub mod swift {
         #[must_use()]
         #[swift_bridge(swift_name = "predict")]
         fn modelRun(&self) -> ModelOutput;
+        #[swift_bridge(swift_name = "hasFailedToLoad")]
+        fn failedToLoad(&self) -> bool;
     }
 
     extern "Swift" {

@@ -103,6 +103,12 @@ impl CoreMLModelWithState {
             CoreMLModelLoader::Buffer(vec) => {
                 let mut coreml_model = CoreMLModel::load_buffer(vec.clone(), info.clone());
                 coreml_model.model.modelLoad();
+                if coreml_model.model.failedToLoad() {
+                    return Err(CoreMLError::FailedToLoadStatic(
+                        "Failed to load model; likely not a CoreML mlmodel file",
+                        Self::Unloaded(info, CoreMLModelLoader::Buffer(vec)),
+                    ));
+                }
                 let loader = CoreMLModelLoader::Buffer(vec);
                 Ok(Self::Loaded(coreml_model, info, loader))
             }
@@ -139,8 +145,13 @@ impl CoreMLModelWithState {
                 match loader {
                     CoreMLModelLoader::Buffer(v) => {
                         let t = TempDir::new("coreml").map_err(CoreMLError::IoError)?;
-                        std::fs::write(&t, v).unwrap();
-                        CoreMLModelLoader::Buffer(std::fs::read(&t).map_err(CoreMLError::IoError)?)
+                        _ = std::fs::remove_dir_all(&t);
+                        _ = std::fs::create_dir_all(&t);
+                        let path = t.path().join("mlmodel_cache");
+                        std::fs::write(&path, v).unwrap();
+                        CoreMLModelLoader::Buffer(
+                            std::fs::read(&path).map_err(CoreMLError::IoError)?,
+                        )
                     }
                     x => x,
                 },
