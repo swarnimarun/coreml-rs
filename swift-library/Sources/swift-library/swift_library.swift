@@ -150,7 +150,7 @@ func initWithCompiledAsset(
 		m.computeUnits = computeUnits
 		return m
 	} catch {
-		let m = Model.init(failedToLoad: false)
+		let m = Model.init(failedToLoad: true)
 		return m
 	}
 }
