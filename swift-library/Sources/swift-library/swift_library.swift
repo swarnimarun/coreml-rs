@@ -39,15 +39,33 @@ class ModelDescription {
 	}
 	func output_shape(name: RustString) -> RustVec<UInt> {
 		if !failedToLoad() {
-			let res = self.description!.outputDescriptionsByName[name.toString()]!
+			let res = self.description?.outputDescriptionsByName[name.toString()]
+			guard let res else { return RustVec.init() }
+			let arr = res.multiArrayConstraint
+			guard let arr else { return RustVec.init() }
 			let ret = RustVec<UInt>()
-			for r in res.multiArrayConstraint!.shape {
+			for r in arr.shape {
 				ret.push(value: UInt(truncating: r))
 			}
 			return ret
 		}
 		return RustVec.init()
 	}
+	func input_shape(name: RustString) -> RustVec<UInt> {
+		if !failedToLoad() {
+			let res = self.description?.inputDescriptionsByName[name.toString()]
+			guard let res else { return RustVec.init() }
+			let arr = res.multiArrayConstraint
+			guard let arr else { return RustVec.init() }
+			let ret = RustVec<UInt>()
+			for r in arr.shape {
+				ret.push(value: UInt(truncating: r))
+			}
+			return ret
+		}
+		return RustVec.init()
+	}
+
 	func output_names() -> RustVec<RustString> {
 		if !failedToLoad() {
 			let ret = RustVec<RustString>()
@@ -186,15 +204,15 @@ func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) ->
 }
 
 struct RuntimeError: LocalizedError {
-    let description: String
+	let description: String
 
-    init(_ description: String) {
-        self.description = description
-    }
+	init(_ description: String) {
+		self.description = description
+	}
 
-    var errorDescription: String? {
-        description
-    }
+	var errorDescription: String? {
+		description
+	}
 }
 
 class Model: @unchecked Sendable {
@@ -281,7 +299,10 @@ class Model: @unchecked Sendable {
 	}
 
 	func predict() -> ModelOutput {
-		if hasFailedToLoad() { return ModelOutput(output: nil, error: RuntimeError("Failed to load model; can't run predict")) }
+		if hasFailedToLoad() {
+			return ModelOutput(
+				output: nil, error: RuntimeError("Failed to load model; can't run predict"))
+		}
 		do {
 			let input = try MLDictionaryFeatureProvider.init(dictionary: self.dict)
 			let opts = MLPredictionOptions.init()
@@ -298,13 +319,13 @@ class Model: @unchecked Sendable {
 	}
 
 	func bindInputF32(
-		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
+		shape: RustVec<UInt>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
 		len: UInt
 	) -> Bool {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
-			var m: Int32 = 1
+			var m: UInt = 1
 			for i in shape.reversed() {
 				stride.append(NSNumber(value: m))
 				m = i * m
@@ -329,12 +350,12 @@ class Model: @unchecked Sendable {
 	}
 
 	func bindInputI32(
-		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Int32>, len: UInt
+		shape: RustVec<UInt>, featureName: RustString, data: UnsafeMutablePointer<Int32>, len: UInt
 	) -> Bool {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
-			var m: Int32 = 1
+			var m: UInt = 1
 			for i in shape.reversed() {
 				stride.append(NSNumber(value: m))
 				m = i * m
@@ -359,13 +380,13 @@ class Model: @unchecked Sendable {
 	}
 
 	func bindInputU16(
-		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<UInt16>,
+		shape: RustVec<UInt>, featureName: RustString, data: UnsafeMutablePointer<UInt16>,
 		len: UInt
 	) -> Bool {
 		do {
 			var arr: [NSNumber] = []
 			var stride: [NSNumber] = []
-			var m: Int32 = 1
+			var m: UInt = 1
 			for i in shape.reversed() {
 				stride.append(NSNumber(value: m))
 				m = i * m

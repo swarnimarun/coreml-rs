@@ -42,7 +42,7 @@ pub mod swift {
         #[must_use()]
         fn bindInputF32(
             &self,
-            shape: Vec<i32>,
+            shape: Vec<usize>,
             featureName: String,
             data: *mut f32,
             len: usize,
@@ -50,7 +50,7 @@ pub mod swift {
         #[must_use()]
         fn bindInputI32(
             &self,
-            shape: Vec<i32>,
+            shape: Vec<usize>,
             featureName: String,
             data: *mut i32,
             len: usize,
@@ -58,7 +58,7 @@ pub mod swift {
         #[must_use()]
         fn bindInputU16(
             &self,
-            shape: Vec<i32>,
+            shape: Vec<usize>,
             featureName: String,
             data: *mut u16,
             len: usize,
@@ -87,6 +87,7 @@ pub mod swift {
         fn output_names(&self) -> Vec<String>;
         fn output_type(&self, name: String) -> String;
         fn output_shape(&self, name: String) -> Vec<usize>;
+        fn input_shape(&self, name: String) -> Vec<usize>;
     }
 
     extern "Swift" {

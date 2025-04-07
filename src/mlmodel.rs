@@ -20,6 +20,8 @@ use thiserror::Error;
 pub enum CoreMLError {
     #[error("IoError: {0}")]
     IoError(std::io::Error),
+    #[error("BadInputShape: {0}")]
+    BadInputShape(String),
     // #[error("Lz4 Decompression Error: {0}")]
     // Lz4DecompressError(DecompressError),
     #[error("UnknownError: {0}")]
@@ -281,7 +283,19 @@ impl CoreMLModel {
         // route input correctly
         let input: MLArray = input.into();
         let name = tag.as_ref().to_string();
-        let shape = input.shape().into_iter().map(|s| *s as i32).collect();
+        let desc = self.model.modelDescription();
+        let shape: Vec<usize> = input.shape().to_vec();
+        let arr = desc.input_shape(name.clone());
+        if arr.len() != shape.len() || !arr.iter().eq(shape.iter()) {
+            if arr.len() == 0 {
+                return Err(CoreMLError::BadInputShape(format!(
+                    "Input feature name '{name}' not expected!"
+                )));
+            }
+            return Err(CoreMLError::BadInputShape(format!(
+                "expected shape {arr:?} found {shape:?}"
+            )));
+        }
         match input {
             MLArray::Float32Array(array_base) => {
                 let mut data = array_base.into_raw_vec();
