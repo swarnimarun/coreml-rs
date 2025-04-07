@@ -8,7 +8,6 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::Arc,
 };
 use tempdir::TempDir;
 // use lz4_flex::block::{compress_prepend_size, decompress_size_prepended, DecompressError};
@@ -272,43 +271,54 @@ impl CoreMLModel {
         let input: MLArray = input.into();
         let name = tag.as_ref().to_string();
         let shape = input.shape().into_iter().map(|s| *s as i32).collect();
-        if input.is_f32() {
-            let mut data = input.into_raw_vec_f32();
-            if !self
-                .model
-                .bindInputF32(shape, name, data.as_mut_ptr(), data.capacity())
-            {
+        match input {
+            MLArray::Float32Array(array_base) => {
+                let mut data = array_base.into_raw_vec();
+                if !self
+                    .model
+                    .bindInputF32(shape, name, data.as_mut_ptr(), data.capacity())
+                {
+                    return Err(CoreMLError::UnknownErrorStatic(
+                        "failed to bind input to model",
+                    ));
+                }
+                std::mem::forget(data);
+            }
+            MLArray::Float16Array(array_base) => {
+                let mut data = array_base.into_raw_vec();
+                if !self.model.bindInputU16(
+                    shape,
+                    name,
+                    data.as_mut_ptr() as *mut u16,
+                    data.capacity(),
+                ) {
+                    return Err(CoreMLError::UnknownErrorStatic(
+                        "failed to bind input to model",
+                    ));
+                }
+                std::mem::forget(data);
+            }
+            MLArray::Int32Array(array_base) => {
+                let mut data = array_base.into_raw_vec();
+                if !self
+                    .model
+                    .bindInputI32(shape, name, data.as_mut_ptr(), data.capacity())
+                {
+                    return Err(CoreMLError::UnknownErrorStatic(
+                        "failed to bind input to model",
+                    ));
+                }
+                std::mem::forget(data);
+            }
+            _ => {
                 return Err(CoreMLError::UnknownErrorStatic(
                     "failed to bind input to model",
                 ));
-            }
-            std::mem::forget(data);
-        } else if input.is_f16() {
-            let mut data = input.into_raw_vec_u16();
-            if !self
-                .model
-                .bindInputU16(shape, name, data.as_mut_ptr(), data.capacity())
-            {
-                return Err(CoreMLError::UnknownErrorStatic(
-                    "failed to bind input to model",
-                ));
-            }
-            std::mem::forget(data);
-        } else if input.is_i32() {
-            let mut data = input.into_raw_vec_i32();
-            if !self
-                .model
-                .bindInputI32(shape, name, data.as_mut_ptr(), data.capacity())
-            {
-                return Err(CoreMLError::UnknownErrorStatic(
-                    "failed to bind input to model",
-                ));
-            }
-            std::mem::forget(data);
-        } else {
-            return Err(CoreMLError::UnknownErrorStatic(
-                "failed to bind input to model",
-            ));
+            } // MLArray::Int16Array(array_base) => todo!(),
+              // MLArray::Int8Array(array_base) => todo!(),
+              // MLArray::UInt32Array(array_base) => todo!(),
+              // MLArray::UInt16Array(array_base) => todo!(),
+              // MLArray::UInt8Array(array_base) => todo!(),
         }
         Ok(())
     }
@@ -319,7 +329,7 @@ impl CoreMLModel {
         self.outputs
             .insert(tag.as_ref().to_string(), ("f32", shape.to_vec()));
         let shape: Vec<i32> = shape.into_iter().map(|i| *i as i32).collect();
-        let mut data = arr.into_raw_vec_f32();
+        let mut data = arr.extract_to_tensor::<f32>().into_raw_vec();
         let name = tag.as_ref().to_string();
         let ptr = data.as_mut_ptr();
         let len = data.capacity();
