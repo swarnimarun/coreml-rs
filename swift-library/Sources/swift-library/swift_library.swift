@@ -70,7 +70,7 @@ class ModelOutput {
 	func hasFailedToLoad() -> Bool {
 		return self.error != nil
 	}
-	func getError() -> Optional<RustString> {
+	func getError() -> RustString? {
 		if self.error == nil {
 			return nil
 		}
@@ -142,7 +142,7 @@ func initWithCompiledAsset(
 	let data = Data.init(
 		bytesNoCopy: ptr, count: len,
 		deallocator: Data.Deallocator.custom { ptr, len in
-			return ()
+			rust_vec_free_u8(ptr.assumingMemoryBound(to: UInt8.self), UInt(len))
 		})
 	do {
 		let m = Model.init(failedToLoad: false)
@@ -183,6 +183,18 @@ func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) ->
 	m.compiledPath = compiledPath
 	m.computeUnits = computeUnits
 	return m
+}
+
+struct RuntimeError: LocalizedError {
+    let description: String
+
+    init(_ description: String) {
+        self.description = description
+    }
+
+    var errorDescription: String? {
+        description
+    }
 }
 
 class Model: @unchecked Sendable {
@@ -269,7 +281,7 @@ class Model: @unchecked Sendable {
 	}
 
 	func predict() -> ModelOutput {
-		// if hasFailedToLoad() { return false }
+		if hasFailedToLoad() { return ModelOutput(output: nil, error: RuntimeError("Failed to load model; can't run predict")) }
 		do {
 			let input = try MLDictionaryFeatureProvider.init(dictionary: self.dict)
 			let opts = MLPredictionOptions.init()

@@ -8,7 +8,9 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
+use tempdir::TempDir;
 // use lz4_flex::block::{compress_prepend_size, decompress_size_prepended, DecompressError};
 
 pub use crate::swift::MLModelOutput;
@@ -131,11 +133,21 @@ impl CoreMLModelWithState {
     }
 
     /// Doesn't unload the model buffer in case model is loaded from a buffer
-    pub fn unload(self) -> Self {
+    pub fn unload(self) -> Result<Self, CoreMLError> {
         if let Self::Loaded(_, info, loader) = self {
-            Self::Unloaded(info, loader)
+            Ok(Self::Unloaded(
+                info,
+                match loader {
+                    CoreMLModelLoader::Buffer(v) => {
+                        let t = TempDir::new("coreml").map_err(CoreMLError::IoError)?;
+                        std::fs::write(&t, v).unwrap();
+                        CoreMLModelLoader::Buffer(std::fs::read(&t).map_err(CoreMLError::IoError)?)
+                    }
+                    x => x,
+                },
+            ))
         } else {
-            self
+            Ok(self)
         }
     }
 
