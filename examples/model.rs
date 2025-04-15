@@ -1,10 +1,7 @@
 use std::{path::PathBuf, sync::atomic::AtomicUsize};
 
-use coreml_rs::{
-    ffi::ComputePlatform,
-    mlarray::{FloatMLArray, MLArray},
-    mlmodel::{CoreMLModelOptions, CoreMLModelWithState},
-};
+use coreml_rs::{ComputePlatform, CoreMLModelOptions, CoreMLModelWithState};
+use libproc::pid_rusage::RUsageInfoV4;
 use ndarray::Array4;
 
 static LEVEL: AtomicUsize = AtomicUsize::new(0);
@@ -20,50 +17,74 @@ pub fn timeit<T>(t: impl AsRef<str>, f: impl FnOnce() -> T) -> T {
     o
 }
 
+pub fn proc_mem_usage() -> String {
+    let pid = std::process::id() as i32;
+    let info = libproc::pid_rusage::pidrusage::<RUsageInfoV4>(pid).unwrap();
+    format!(
+        "RSS: {}, Physical Footprint: {}",
+        info.ri_resident_size, info.ri_phys_footprint
+    )
+}
+
 pub fn main() {
-    let file = std::fs::read("./demo/model_3.mlmodel").unwrap();
-    let mut m = timeit("load and compile model", || {
-        let mut model_options = CoreMLModelOptions::default();
-        model_options.compute_platform = ComputePlatform::CpuAndANE;
-        model_options.cache_dir = PathBuf::from(".");
-        let mut model = CoreMLModelWithState::from_buf(file, model_options);
-        model = timeit("load model", || model.load().unwrap());
-        // println!("model description:\n{:#?}", model.description());
-        return model;
-    });
+    {
+        let file = std::fs::read("./demo/model_3.mlmodel").unwrap();
+        dbg!(proc_mem_usage());
 
-    let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
-    input.fill(1.0f32);
+        let mut m = timeit("load and compile model", || {
+            let mut model_options = CoreMLModelOptions::default();
+            model_options.compute_platform = ComputePlatform::CpuAndANE;
+            model_options.cache_dir = PathBuf::from(".");
+            let mut model = CoreMLModelWithState::from_buf(file, model_options);
+            model = timeit("load model", || model.load().unwrap());
+            println!("model description:\n{:#?}", model.description());
+            return model;
+        });
 
-    m.add_input("image", input.clone());
-    let output = timeit("predict", || {
-        return m.predict();
-    })
-    .unwrap();
+        let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
+        input.fill(1.0f32);
 
-    let _ = match output.outputs.get("mask").unwrap() {
-        MLArray::FloatArray(FloatMLArray::Array(array)) => array,
-        _ => panic!("unreachable"),
-    };
+        let res = m.add_input("image", input.into_dyn());
+        println!("{res:?}");
+        // dbg!("loaded input", proc_mem_usage());
 
-    m = timeit("unload model", || {
-        // println!("{m:#?}");
-        let r = m.unload();
-        // println!("{r:#?}");
-        r
-    });
+        let output = timeit("predict", || {
+            return m.predict();
+        })
+        .unwrap();
+        dbg!("predict output in mem", proc_mem_usage());
+        drop(output);
+        dbg!("predict output yeeted", proc_mem_usage());
 
-    m = timeit("load from cache model", || {
-        let r = m.load().unwrap();
-        // println!("{r:#?}");
-        r
-    });
+        // let _ = match output.outputs.get("mask").unwrap() {
+        //     MLArray::FloatArray(FloatMLArray::Array(array)) => array,
+        //     _ => panic!("unreachable"),
+        // };
 
-    m.add_input("image", input);
-    let _ = timeit("predict", || {
-        return m.predict();
-    })
-    .unwrap();
+        m = timeit("unload model", || {
+            // println!("{m:#?}");
+            let r = m.unload().unwrap();
+            // let r = m.unload_to_disk().unwrap();
+            // println!("{r:#?}");
+            r
+        });
+        dbg!("unloaded", proc_mem_usage());
+
+        // _ = timeit("load from cache model", || {
+        //     let r = m.load().unwrap();
+        //     // println!("{r:#?}");
+        //     r
+        // });
+        drop(m);
+        dbg!("loaded again", proc_mem_usage());
+
+        // m.add_input("image", input);
+        // let _ = timeit("predict", || {
+        //     return m.predict();
+        // })
+        // .unwrap();
+    }
+    dbg!("deallocate all of it", proc_mem_usage());
 
     // very cheap doesn't need to be measured!
     // let output: Array4<f32> = Array4::from_shape_vec([1, 3, 2048, 2048], v).unwrap();

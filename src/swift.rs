@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use swift::{ComputePlatform, ModelOutput};
+use swift::{BatchOutput, ComputePlatform, ModelOutput};
 
 use crate::mlarray::MLArray;
 
@@ -26,6 +26,41 @@ pub mod swift {
         pub fn modelWithPath(path: String, compute: ComputePlatform, compiled: bool) -> Model;
         #[swift_bridge(swift_name = "initWithCompiledAsset")]
         pub fn modelWithAssets(ptr: *mut u8, len: isize, compute: ComputePlatform) -> Model;
+        #[swift_bridge(swift_name = "initWithCompiledAssetBatch")]
+        pub fn modelWithAssetsBatch(
+            ptr: *mut u8,
+            len: isize,
+            compute: ComputePlatform,
+        ) -> BatchModel;
+    }
+
+    extern "Swift" {
+        type BatchOutput;
+
+        #[swift_bridge(swift_name = "getOutputAtIndex")]
+        pub fn for_idx(&self, at: isize) -> ModelOutput;
+        pub fn getError(&self) -> Option<String>;
+        pub fn count(&self) -> isize;
+    }
+
+    extern "Swift" {
+        type BatchModel;
+
+        fn load(&mut self) -> bool;
+        fn unload(&mut self) -> bool;
+        fn description(&self) -> ModelDescription;
+        fn predict(&self) -> BatchOutput;
+        fn bindInputF32(
+            &self,
+            shape: Vec<usize>,
+            featureName: String,
+            data: *mut f32,
+            len: usize,
+            idx: isize,
+        ) -> bool;
+        #[swift_bridge(swift_name = "hasFailedToLoad")]
+        fn failed(&self) -> bool;
+
     }
 
     extern "Swift" {
@@ -110,7 +145,6 @@ impl std::default::Default for ComputePlatform {
 /// performs a memcpy
 fn rust_vec_from_ptr_f32(ptr: *mut f32, len: usize) -> Vec<f32> {
     unsafe { Vec::from_raw_parts(ptr, len, len) }
-    // unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
 }
 /// performs a memcpy
 fn rust_vec_from_ptr_u16(ptr: *mut u16, len: usize) -> Vec<u16> {
@@ -148,4 +182,9 @@ fn rust_vec_free_i32(ptr: *mut i32, len: usize) {
 pub struct MLModelOutput {
     pub model_output: ModelOutput,
     pub outputs: HashMap<String, MLArray>,
+}
+
+pub struct MLBatchModelOutput {
+    // pub model_output: BatchOutput,
+    pub outputs: Vec<HashMap<String, MLArray>>,
 }

@@ -1,5 +1,145 @@
 import CoreML
 
+class BatchOutput {
+	var batchProvider: MLBatchProvider? = nil 
+	var error: String? = nil
+	init(error: String? = nil, batchProvider: MLBatchProvider? = nil) {
+		self.batchProvider = batchProvider
+		self.error = error
+	}
+
+	func getOutputAtIndex(at: Int) -> ModelOutput {
+		let features = self.batchProvider?.features(at: at) as? MLDictionaryFeatureProvider
+		return ModelOutput.init(output: features?.dictionary)
+	}
+
+	func count() -> Int {
+		let c =  self.batchProvider?.count
+		guard let c else { return 0 }
+		return c
+	}
+
+	func getError() -> RustString? {
+		if self.error == nil {
+			return nil
+		}
+		return "\(self.error!)".intoRustString()
+	}
+}
+
+class BatchModelInput {
+	var dict: [String: Any] = [:]
+	func toFeatureProvider() -> MLDictionaryFeatureProvider? {
+		do {
+			return try MLDictionaryFeatureProvider.init(dictionary: self.dict)
+		} catch {
+			return nil
+		}
+	}
+}
+
+class BatchModel: @unchecked Sendable {
+	var compiledPath: URL? = nil
+	var model: MLModel? = nil
+	var modelCompiledAsset: MLModelAsset? = nil
+	var inputs: [BatchModelInput] = []
+	var computeUnits: MLComputeUnits = .cpuAndNeuralEngine
+	var failedToLoad: Bool
+
+	init(failedToLoad: Bool = false, model: MLModel? = nil) {
+		self.failedToLoad = failedToLoad
+	}
+
+	func hasFailedToLoad() -> Bool {
+		return self.failedToLoad
+	}
+
+	func description() -> ModelDescription {
+		return ModelDescription(desc: self.model?.modelDescription)
+	}
+
+	func load() -> Bool {
+		if hasFailedToLoad() { return false }
+		let config = MLModelConfiguration.init()
+		config.computeUnits = self.computeUnits
+		do {
+			if self.compiledPath == nil {
+				let semaphore = DispatchSemaphore(value: 0)
+				Task { [weak self] in
+					guard let self else { return }
+					let asset = self.modelCompiledAsset!
+					let res = try await MLModel.load(asset: asset, configuration: config)
+					self.model = res
+					semaphore.signal()
+				}
+				semaphore.wait()
+			} else {
+				let loadedModel = try MLModel(contentsOf: self.compiledPath!, configuration: config)
+				self.model = loadedModel
+			}
+			return true
+		} catch {
+			return false
+		}
+	}
+
+	func unload() -> Bool {
+		if hasFailedToLoad() { return false }
+		self.model = nil
+		return true
+	}
+
+	func bindInputF32(
+		shape: RustVec<UInt>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
+		len: UInt, idx: Int
+	) -> Bool {
+		do {
+			var arr: [NSNumber] = []
+			var stride: [NSNumber] = []
+			var m: UInt = 1
+			for i in shape.reversed() {
+				stride.append(NSNumber(value: m))
+				m = i * m
+			}
+			stride.reverse()
+			for s in shape {
+				arr.append(NSNumber(value: s))
+			}
+			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) in
+				rust_vec_free_f32(ptr.assumingMemoryBound(to: Float32.self), len)
+			}
+			let array = try MLMultiArray.init(
+				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
+				strides: stride, deallocator: deallocMultiArrayRust)
+			let value = MLFeatureValue(multiArray: array)
+			if self.inputs.count <= idx {
+				self.inputs.append(BatchModelInput.init())
+			}
+			self.inputs[idx].dict[featureName.toString()] = value
+			return true
+		} catch {
+			print("Unexpected input error; \(error)")
+			return false
+		}
+	}
+
+	func predict() -> BatchOutput {
+		do {
+			let opts = MLPredictionOptions.init()
+			// TODO (SA): to feature provider
+			let features = inputs.compactMap { input in
+				input.toFeatureProvider()
+			}
+			let batchProvider = MLArrayBatchProvider.init(array: features);
+			let output = try self.model?.predictions(from: batchProvider, options: opts)
+			guard let output else { return BatchOutput.init(error: "ran predict without a model loaded into memory") }
+			return BatchOutput.init(batchProvider: output)
+		} catch {
+			return BatchOutput.init(error: error.localizedDescription)
+		}
+	}
+}
+
 class ModelDescription {
 	var description: MLModelDescription? = nil
 	init(desc: MLModelDescription?) {
@@ -81,7 +221,7 @@ class ModelDescription {
 class ModelOutput {
 	var output: [String: Any]? = [:]
 	var error: (any Error)? = nil
-	init(output: [String: Any]?, error: (any Error)?) {
+	init(output: [String: Any]?, error: (any Error)? = nil) {
 		self.output = output
 		self.error = error
 	}
@@ -169,6 +309,37 @@ func initWithCompiledAsset(
 		return m
 	} catch {
 		let m = Model.init(failedToLoad: true)
+		return m
+	}
+}
+
+func initWithCompiledAssetBatch(
+	ptr: UnsafeMutablePointer<UInt8>, len: Int, compute: ComputePlatform
+) -> BatchModel {
+	var computeUnits: MLComputeUnits
+	switch compute {
+	case .Cpu:
+		computeUnits = .cpuOnly
+		break
+	case .CpuAndANE:
+		computeUnits = .cpuAndNeuralEngine
+		break
+	case .CpuAndGpu:
+		computeUnits = .cpuAndGPU
+		break
+	}
+	let data = Data.init(
+		bytesNoCopy: ptr, count: len,
+		deallocator: Data.Deallocator.custom { ptr, len in
+			rust_vec_free_u8(ptr.assumingMemoryBound(to: UInt8.self), UInt(len))
+		})
+	do {
+		let m = BatchModel.init(failedToLoad: false)
+		m.modelCompiledAsset = try MLModelAsset.init(specification: data)
+		m.computeUnits = computeUnits
+		return m
+	} catch {
+		let m = BatchModel.init(failedToLoad: true)
 		return m
 	}
 }

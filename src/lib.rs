@@ -1,6 +1,7 @@
 pub mod mlarray;
-// pub mod mlmodel;
+pub mod mlbatchmodel;
 pub mod mlmodel;
+
 mod swift;
 
 // re-exports
