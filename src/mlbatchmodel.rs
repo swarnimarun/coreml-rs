@@ -167,12 +167,12 @@ impl CoreMLBatchModelWithState {
         }
     }
 
-    // pub fn description(&self) -> Result<HashMap<&str, Vec<String>>, CoreMLError> {
-    //     match self {
-    //         CoreMLBatchModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
-    //         CoreMLBatchModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.description()),
-    //     }
-    // }
+    pub fn description(&self) -> Result<HashMap<&str, Vec<String>>, CoreMLError> {
+        match self {
+            CoreMLBatchModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
+            CoreMLBatchModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.description()),
+        }
+    }
 
     pub fn add_input(
         &mut self,
