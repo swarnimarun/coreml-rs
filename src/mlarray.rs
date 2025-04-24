@@ -95,7 +95,7 @@ impl MLType for u32 {
     const TY: usize = 7;
 }
 // impl MLType for i8 {
-//     const TY: usize = 6;
+//     const TY: usize = 8;
 // }
 
 impl<T: MLType> From<ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>> for MLArray {
