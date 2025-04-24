@@ -170,7 +170,7 @@ impl CoreMLModelWithState {
                         _ = std::fs::create_dir_all(&t);
                         let path = t.path().join("mlmodel_cache");
                         std::fs::write(&path, v).unwrap();
-                        _ = std::fs::create_dir_all(&t);
+                        _ = std::fs::remove_dir_all(&t);
                         CoreMLModelLoader::Buffer(
                             std::fs::read(&path).map_err(CoreMLError::IoError)?,
                         )
