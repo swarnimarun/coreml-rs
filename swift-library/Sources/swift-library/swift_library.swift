@@ -374,6 +374,36 @@ func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) ->
 	return m
 }
 
+func initWithPathBatch(path: RustString, compute: ComputePlatform, compiled: Bool) -> BatchModel {
+	var computeUnits: MLComputeUnits
+	switch compute {
+	case .Cpu:
+		computeUnits = .cpuOnly
+		break
+	case .CpuAndANE:
+		computeUnits = .cpuAndNeuralEngine
+		break
+	case .CpuAndGpu:
+		computeUnits = .cpuAndGPU
+		break
+	}
+	var compiledPath: URL
+	if compiled {
+		compiledPath = URL(string: path.toString())!
+	} else {
+		let url = URL(string: path.toString())!
+		do {
+			compiledPath = try MLModel.compileModel(at: url)
+		} catch {
+			return BatchModel.init(failedToLoad: true)
+		}
+	}
+	let m = BatchModel.init(failedToLoad: false)
+	m.compiledPath = compiledPath
+	m.computeUnits = computeUnits
+	return m
+}
+
 struct RuntimeError: LocalizedError {
 	let description: String
 

@@ -1,5 +1,5 @@
 use crate::{
-    ffi::{modelWithAssetsBatch, BatchModel},
+    ffi::{modelWithAssetsBatch, modelWithPathBatch, BatchModel},
     mlarray::MLArray,
     mlmodel::{CoreMLError, CoreMLModelInfo, CoreMLModelLoader},
     swift::MLBatchModelOutput,
@@ -46,12 +46,36 @@ impl CoreMLBatchModelWithState {
         };
         match loader {
             CoreMLModelLoader::ModelPath(path_buf) => {
-                // compile and load
-                todo!()
+                let mut coreml_model = CoreMLBatchModel::load_from_path(
+                    path_buf.display().to_string(),
+                    info.clone(),
+                    false,
+                );
+                coreml_model.model.load();
+                let loader = CoreMLModelLoader::ModelPath(path_buf);
+                if coreml_model.model.failed() {
+                    return Err(CoreMLError::FailedToLoadBatchStatic(
+                        "Failed to load model; likely not a CoreML model file",
+                        Self::Unloaded(info, loader),
+                    ));
+                }
+                Ok(Self::Loaded(coreml_model, info, loader))
             }
             CoreMLModelLoader::CompiledPath(path_buf) => {
-                // assume compiled model path provided!
-                todo!()
+                let mut coreml_model = CoreMLBatchModel::load_from_path(
+                    path_buf.display().to_string(),
+                    info.clone(),
+                    true,
+                );
+                coreml_model.model.load();
+                let loader = CoreMLModelLoader::CompiledPath(path_buf);
+                if coreml_model.model.failed() {
+                    return Err(CoreMLError::FailedToLoadBatchStatic(
+                        "Failed to load model; likely not a CoreML model file",
+                        Self::Unloaded(info, loader),
+                    ));
+                }
+                Ok(Self::Loaded(coreml_model, info, loader))
             }
             CoreMLModelLoader::Buffer(vec) => {
                 let mut coreml_model = CoreMLBatchModel::load_buffer(vec.clone(), info.clone());
@@ -123,8 +147,6 @@ impl CoreMLBatchModelWithState {
             Self::Loaded(_, mut info, loader) | Self::Unloaded(mut info, loader) => {
                 let loader = {
                     match loader {
-                        CoreMLModelLoader::ModelPath(path_buf) => todo!("to be implemented"),
-                        CoreMLModelLoader::CompiledPath(path_buf) => todo!("to be implemented"),
                         CoreMLModelLoader::Buffer(vec) => {
                             if info.opts.cache_dir.as_os_str().is_empty() {
                                 info.opts.cache_dir = PathBuf::from(".");
@@ -159,7 +181,7 @@ impl CoreMLBatchModelWithState {
                             };
                             CoreMLModelLoader::BufferToDisk(m)
                         }
-                        m @ CoreMLModelLoader::BufferToDisk(_) => m,
+                        loader => loader,
                     }
                 };
                 Ok(Self::Unloaded(info, loader))
@@ -212,6 +234,15 @@ impl std::fmt::Debug for BatchModel {
 }
 
 impl CoreMLBatchModel {
+    pub fn load_from_path(path: String, info: CoreMLModelInfo, compiled: bool) -> Self {
+        let coreml_model = Self {
+            model: modelWithPathBatch(path, info.opts.compute_platform, compiled),
+            // save_path: None,
+            outputs: Default::default(),
+        };
+        coreml_model
+    }
+
     pub fn load_buffer(mut buf: Vec<u8>, info: CoreMLModelInfo) -> Self {
         let coreml_model = Self {
             model: modelWithAssetsBatch(

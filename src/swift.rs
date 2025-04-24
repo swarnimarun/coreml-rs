@@ -32,6 +32,12 @@ pub mod swift {
             len: isize,
             compute: ComputePlatform,
         ) -> BatchModel;
+        #[swift_bridge(swift_name = "initWithPathBatch")]
+        pub fn modelWithPathBatch(
+            path: String,
+            compute: ComputePlatform,
+            compiled: bool,
+        ) -> BatchModel;
     }
 
     extern "Swift" {
@@ -99,19 +105,15 @@ pub mod swift {
             len: usize,
         ) -> bool;
         #[must_use()]
-        #[swift_bridge(swift_name = "load")]
-        fn modelLoad(&mut self) -> bool;
+        fn load(&mut self) -> bool;
         #[must_use()]
-        #[swift_bridge(swift_name = "unload")]
-        fn modelUnload(&mut self) -> bool;
+        fn unload(&mut self) -> bool;
         #[must_use()]
-        #[swift_bridge(swift_name = "description")]
-        fn modelDescription(&self) -> ModelDescription;
+        fn description(&self) -> ModelDescription;
         #[must_use()]
-        #[swift_bridge(swift_name = "predict")]
-        fn modelRun(&self) -> ModelOutput;
+        fn predict(&self) -> ModelOutput;
         #[swift_bridge(swift_name = "hasFailedToLoad")]
-        fn failedToLoad(&self) -> bool;
+        fn failed(&self) -> bool;
     }
 
     extern "Swift" {

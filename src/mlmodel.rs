@@ -11,7 +11,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use tempdir::TempDir;
-// use lz4_flex::block::{compress_prepend_size, decompress_size_prepended, DecompressError};
 
 pub use crate::swift::MLModelOutput;
 
@@ -105,7 +104,7 @@ impl CoreMLModelWithState {
                     info.clone(),
                     false,
                 );
-                coreml_model.model.modelLoad();
+                coreml_model.model.load();
                 Ok(Self::Loaded(
                     coreml_model,
                     info,
@@ -115,7 +114,7 @@ impl CoreMLModelWithState {
             CoreMLModelLoader::CompiledPath(path_buf) => {
                 let mut coreml_model =
                     CoreMLModel::load_from_path(path_buf.display().to_string(), info.clone(), true);
-                coreml_model.model.modelLoad();
+                coreml_model.model.load();
                 Ok(Self::Loaded(
                     coreml_model,
                     info,
@@ -124,8 +123,8 @@ impl CoreMLModelWithState {
             }
             CoreMLModelLoader::Buffer(vec) => {
                 let mut coreml_model = CoreMLModel::load_buffer(vec.clone(), info.clone());
-                coreml_model.model.modelLoad();
-                if coreml_model.model.failedToLoad() {
+                coreml_model.model.load();
+                if coreml_model.model.failed() {
                     return Err(CoreMLError::FailedToLoadStatic(
                         "Failed to load model; likely not a CoreML mlmodel file",
                         Self::Unloaded(info, CoreMLModelLoader::Buffer(vec)),
@@ -146,7 +145,7 @@ impl CoreMLModelWithState {
                     }) {
                     Ok(vec) => {
                         let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
-                        coreml_model.model.modelLoad();
+                        coreml_model.model.load();
                         let loader = CoreMLModelLoader::BufferToDisk(u);
                         Ok(Self::Loaded(coreml_model, info, loader))
                     }
@@ -171,6 +170,7 @@ impl CoreMLModelWithState {
                         _ = std::fs::create_dir_all(&t);
                         let path = t.path().join("mlmodel_cache");
                         std::fs::write(&path, v).unwrap();
+                        _ = std::fs::create_dir_all(&t);
                         CoreMLModelLoader::Buffer(
                             std::fs::read(&path).map_err(CoreMLError::IoError)?,
                         )
@@ -309,7 +309,7 @@ impl CoreMLModel {
         // route input correctly
         let input: MLArray = input.into();
         let name = tag.as_ref().to_string();
-        let desc = self.model.modelDescription();
+        let desc = self.model.description();
         let shape: Vec<usize> = input.shape().to_vec();
         let arr = desc.input_shape(name.clone());
         if arr.len() != shape.len() || !arr.iter().eq(shape.iter()) {
@@ -392,7 +392,7 @@ impl CoreMLModel {
     }
 
     pub fn predict(&mut self) -> Result<MLModelOutput, CoreMLError> {
-        let desc = self.model.modelDescription();
+        let desc = self.model.description();
         for name in desc.output_names() {
             let output_shape = desc.output_shape(name.clone());
             let ty = desc.output_type(name.clone());
@@ -407,7 +407,7 @@ impl CoreMLModel {
                 }
             }
         }
-        let output = self.model.modelRun();
+        let output = self.model.predict();
         if let Some(err) = output.getError() {
             return Err(CoreMLError::UnknownError(err));
         }
@@ -432,7 +432,7 @@ impl CoreMLModel {
     }
 
     pub fn description(&self) -> HashMap<&str, Vec<String>> {
-        let desc = self.model.modelDescription();
+        let desc = self.model.description();
         let mut map = HashMap::new();
         map.insert("input", desc.inputs());
         map.insert("output", desc.outputs());

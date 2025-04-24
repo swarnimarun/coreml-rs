@@ -29,12 +29,16 @@ pub fn proc_mem_usage() -> String {
 pub fn main() {
     dbg!("process init", proc_mem_usage());
 
+    let buf = std::fs::read("./demo/model_3.mlmodel").unwrap();
+    let input_name = "image";
+
     let mut m = timeit("load and compile model", || {
         let mut model_options = CoreMLModelOptions::default();
         model_options.compute_platform = ComputePlatform::CpuAndANE;
         // model_options.cache_dir = PathBuf::from(".");
-        let mut model =
-            CoreMLModelWithState::new(PathBuf::from("./demo/test.mlpackage"), model_options);
+        // let mut model =
+        //     CoreMLModelWithState::new(PathBuf::from("./demo/test.mlpackage"), model_options);
+        let mut model = CoreMLModelWithState::from_buf(buf, model_options);
         model = timeit("load model", || model.load().unwrap());
         println!("model description:\n{:#?}", model.description());
         return model;
@@ -44,7 +48,7 @@ pub fn main() {
     let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
     input.fill(1.0f32);
 
-    _ = m.add_input("img", input.clone().into_dyn());
+    _ = m.add_input(input_name, input.clone().into_dyn());
     dbg!("load input", proc_mem_usage());
 
     let output = timeit("predict", || {
@@ -72,7 +76,7 @@ pub fn main() {
     });
     dbg!("loaded again", proc_mem_usage());
 
-    _ = m.add_input("img", input.into_dyn());
+    _ = m.add_input(input_name, input.into_dyn());
     let _ = timeit("predict", || {
         return m.predict();
     })
