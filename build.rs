@@ -45,10 +45,15 @@ fn main() {
 fn compile_swift() {
     let swift_package_dir = manifest_dir().join("swift-library");
 
+    let triple = std::env::var("TARGET").unwrap();
+    let parts = triple.split("-").collect::<Vec<_>>();
+    let arch = parts.first().clone().unwrap();
+
     let mut cmd = Command::new("swift");
 
     cmd.current_dir(swift_package_dir)
         .arg("build")
+        .args(&["--arch", &arch])
         .args(&["-Xswiftc", "-static"])
         .args(&[
             "-Xswiftc",
