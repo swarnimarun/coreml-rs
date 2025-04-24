@@ -427,7 +427,6 @@ impl CoreMLModel {
                     Some((key, array.into()))
                 })
                 .collect(),
-            model_output: output,
         })
     }
 

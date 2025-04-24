@@ -182,11 +182,9 @@ fn rust_vec_free_i32(ptr: *mut i32, len: usize) {
 }
 
 pub struct MLModelOutput {
-    pub model_output: ModelOutput,
     pub outputs: HashMap<String, MLArray>,
 }
 
 pub struct MLBatchModelOutput {
-    // pub model_output: BatchOutput,
     pub outputs: Vec<HashMap<String, MLArray>>,
 }
