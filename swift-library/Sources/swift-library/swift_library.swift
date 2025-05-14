@@ -428,6 +428,10 @@ class Model: @unchecked Sendable {
 	init(failedToLoad: Bool) {
 		self.failedToLoad = failedToLoad
 	}
+	
+	func getCompiledPath() -> RustString? {
+		return self.compiledPath?.absoluteString.intoRustString()
+	}
 
 	func hasFailedToLoad() -> Bool {
 		return self.failedToLoad

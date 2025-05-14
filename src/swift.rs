@@ -104,13 +104,13 @@ pub mod swift {
             data: *mut u16,
             len: usize,
         ) -> bool;
-        #[must_use()]
+
+        #[swift_bridge(swift_name = "getCompiledPath")]
+        fn compiled_path(&self) -> Option<String>;
+
         fn load(&mut self) -> bool;
-        #[must_use()]
         fn unload(&mut self) -> bool;
-        #[must_use()]
         fn description(&self) -> ModelDescription;
-        #[must_use()]
         fn predict(&self) -> ModelOutput;
         #[swift_bridge(swift_name = "hasFailedToLoad")]
         fn failed(&self) -> bool;

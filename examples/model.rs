@@ -1,8 +1,9 @@
-use std::{path::PathBuf, sync::atomic::AtomicUsize};
+use std::{path::PathBuf, str::FromStr, sync::atomic::AtomicUsize};
 
 use coreml_rs::{ComputePlatform, CoreMLModelOptions, CoreMLModelWithState};
 use libproc::pid_rusage::RUsageInfoV4;
 use ndarray::Array4;
+use sha2::Digest;
 
 static LEVEL: AtomicUsize = AtomicUsize::new(0);
 
@@ -26,24 +27,71 @@ pub fn proc_mem_usage() -> String {
     )
 }
 
+pub fn unzip_to_path_from_hash(buf: &[u8]) -> Option<PathBuf> {
+    fn get_cache_filename(model_buffer: &[u8]) -> String {
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(model_buffer);
+        let hash = hasher.finalize();
+        format!("{:x}.mlpackage", hash)
+    }
+    let name = get_cache_filename(buf);
+
+    // writing to tmp allows faster processing and usage as it's part of swap based in-memory tmpfs
+    let path = PathBuf::from_str("/tmp/coreml-aftershoot/").ok()?;
+    let path = path.join(name);
+    _ = std::fs::remove_dir_all(&path);
+    _ = std::fs::remove_file(&path);
+
+    let mut res = zip::ZipArchive::new(std::io::Cursor::new(buf)).ok()?;
+    res.extract(&path).ok()?;
+
+    let m = path.join("model.mlpackage");
+    if m.exists() {
+        Some(m)
+    } else {
+        None
+    }
+}
+
+fn temp_buf_to_path<T>(buf: Vec<u8>, f: impl FnOnce(std::path::PathBuf) -> Option<T>) -> Option<T> {
+    let path = unzip_to_path_from_hash(&buf)?;
+    let res = f(path.clone());
+    _ = dbg!(std::fs::remove_dir_all(&path));
+    _ = dbg!(std::fs::remove_file(path));
+    res
+}
+
+fn is_zip(s: &[u8]) -> bool {
+    zip::ZipArchive::new(std::io::Cursor::new(s)).is_ok()
+}
+
 pub fn main() {
     dbg!("process init", proc_mem_usage());
 
-    let buf = std::fs::read("./demo/model_3.mlmodel").unwrap();
-    let input_name = "image";
+    let buf = std::fs::read("./demo/model_9.zip").unwrap();
+    if !is_zip(&buf) {
+        panic!("unsupported");
+    }
 
-    let mut m = timeit("load and compile model", || {
-        let mut model_options = CoreMLModelOptions::default();
-        model_options.compute_platform = ComputePlatform::CpuAndANE;
-        // model_options.cache_dir = PathBuf::from(".");
-        // let mut model =
-        //     CoreMLModelWithState::new(PathBuf::from("./demo/test.mlpackage"), model_options);
-        let mut model = CoreMLModelWithState::from_buf(buf, model_options);
-        model = timeit("load model", || model.load().unwrap());
-        println!("model description:\n{:#?}", model.description());
-        return model;
-    });
+    let mut m = temp_buf_to_path(buf, |path| {
+        Some(timeit("load and compile model", move || {
+            let mut model_options = CoreMLModelOptions::default();
+            model_options.compute_platform = ComputePlatform::CpuAndGpu;
+            // model_options.cache_dir = PathBuf::from(".");
+            let mut model = CoreMLModelWithState::new(PathBuf::from(path), model_options);
+            // let mut model = CoreMLModelWithState::from_buf(buf, model_options);
+            model = timeit("load model", || model.load().unwrap());
+
+            return model;
+        }))
+    })
+    .unwrap();
+    let input_name = "eye";
+
+    println!("model description:\n{:#?}", m.description());
+
     dbg!("model load", proc_mem_usage());
+    return;
 
     let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
     input.fill(1.0f32);

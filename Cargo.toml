@@ -21,3 +21,5 @@ swift-bridge-build = "0.1"
 
 [dev-dependencies]
 libproc = "0.14.4"
+sha2 = "0.10.9"
+zip = "2.6.1"

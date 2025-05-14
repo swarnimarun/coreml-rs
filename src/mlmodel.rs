@@ -63,8 +63,11 @@ impl std::fmt::Debug for CoreMLModelOptions {
 
 #[derive(Debug)]
 pub enum CoreMLModelLoader {
+    /// Model to be loaded from the given path
     ModelPath(PathBuf),
+    /// Model cache built and stored at path, to be used for faster reload
     CompiledPath(PathBuf),
+    /// Model with buffer to manage the buffer locally
     Buffer(Vec<u8>),
     BufferToDisk(PathBuf),
 }
@@ -104,7 +107,12 @@ impl CoreMLModelWithState {
                     info.clone(),
                     false,
                 );
-                coreml_model.model.load();
+                if !coreml_model.model.load() {
+                    return Err(CoreMLError::FailedToLoadStatic(
+                        "Failed to load model; model path not valid",
+                        Self::Unloaded(info, CoreMLModelLoader::ModelPath(path_buf)),
+                    ));
+                }
                 Ok(Self::Loaded(
                     coreml_model,
                     info,
@@ -114,7 +122,12 @@ impl CoreMLModelWithState {
             CoreMLModelLoader::CompiledPath(path_buf) => {
                 let mut coreml_model =
                     CoreMLModel::load_from_path(path_buf.display().to_string(), info.clone(), true);
-                coreml_model.model.load();
+                if !coreml_model.model.load() {
+                    return Err(CoreMLError::FailedToLoadStatic(
+                        "Failed to load model; compiled model cache got purged",
+                        Self::Unloaded(info, CoreMLModelLoader::CompiledPath(path_buf)),
+                    ));
+                }
                 Ok(Self::Loaded(
                     coreml_model,
                     info,
@@ -160,7 +173,7 @@ impl CoreMLModelWithState {
 
     /// Doesn't unload the model buffer in case model is loaded from a buffer
     pub fn unload(self) -> Result<Self, CoreMLError> {
-        if let Self::Loaded(_, info, loader) = self {
+        if let Self::Loaded(model, info, loader) = self {
             Ok(Self::Unloaded(
                 info,
                 match loader {
@@ -174,6 +187,11 @@ impl CoreMLModelWithState {
                         CoreMLModelLoader::Buffer(
                             std::fs::read(&path).map_err(CoreMLError::IoError)?,
                         )
+                    }
+                    CoreMLModelLoader::ModelPath(_) => {
+                        // if the model is loaded from modelPath it has to have compiled path
+                        let path = model.model.compiled_path().unwrap();
+                        CoreMLModelLoader::CompiledPath(path.into())
                     }
                     x => x,
                 },
