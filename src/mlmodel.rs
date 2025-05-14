@@ -18,7 +18,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CoreMLError {
-    #[error("IoError: {0}")]
+    #[error("CoreML Cache IoError: {0}")]
     IoError(std::io::Error),
     #[error("BadInputShape: {0}")]
     BadInputShape(String),
@@ -183,10 +183,9 @@ impl CoreMLModelWithState {
                         _ = std::fs::create_dir_all(&t);
                         let path = t.path().join("mlmodel_cache");
                         std::fs::write(&path, v).unwrap();
+                        let res = std::fs::read(&path).map_err(CoreMLError::IoError)?;
                         _ = std::fs::remove_dir_all(&t);
-                        CoreMLModelLoader::Buffer(
-                            std::fs::read(&path).map_err(CoreMLError::IoError)?,
-                        )
+                        CoreMLModelLoader::Buffer(res)
                     }
                     CoreMLModelLoader::ModelPath(_) => {
                         // if the model is loaded from modelPath it has to have compiled path

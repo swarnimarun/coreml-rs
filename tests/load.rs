@@ -56,3 +56,18 @@ pub fn reload_from_compiled_path() {
     let res = m.load();
     assert!(!matches!(res, Err(CoreMLError::FailedToLoadStatic(_, _))));
 }
+
+#[test]
+pub fn reload_from_buf() {
+    let model_path = "./demo/model_3.mlmodel";
+    let buf = std::fs::read(model_path).unwrap();
+    let m = CoreMLModelWithState::from_buf(buf, CoreMLModelOptions::default());
+    let res = m.load();
+    assert!(!matches!(res, Err(CoreMLError::FailedToLoadStatic(_, _))));
+    let m = res.unwrap();
+    let res = m.unload();
+    assert!(!matches!(res, Err(CoreMLError::FailedToLoadStatic(_, _))));
+    let m = res.unwrap();
+    let res = m.load();
+    assert!(!matches!(res, Err(CoreMLError::FailedToLoadStatic(_, _))));
+}
