@@ -1,6 +1,9 @@
 use std::{path::PathBuf, str::FromStr, sync::atomic::AtomicUsize};
 
-use coreml_rs::{ComputePlatform, CoreMLModelOptions, CoreMLModelWithState};
+use coreml_rs::{
+    mlbatchmodel::CoreMLBatchModelWithState, ComputePlatform, CoreMLModelOptions,
+    CoreMLModelWithState,
+};
 use libproc::pid_rusage::RUsageInfoV4;
 use ndarray::Array4;
 use sha2::Digest;
@@ -68,42 +71,50 @@ fn is_zip(s: &[u8]) -> bool {
 pub fn main() {
     dbg!("process init", proc_mem_usage());
 
-    let buf = std::fs::read("./demo/model_9.zip").unwrap();
-    if !is_zip(&buf) {
-        panic!("unsupported");
-    }
+    // let buf = std::fs::read("./demo/model_2.zip").unwrap();
+    // if !is_zip(&buf) {
+    //     panic!("unsupported");
+    // }
+    let buf = std::fs::read("./demo/model_3.mlmodel").unwrap();
 
-    let mut m = temp_buf_to_path(buf, |path| {
-        Some(timeit("load and compile model", move || {
-            let mut model_options = CoreMLModelOptions::default();
-            model_options.compute_platform = ComputePlatform::CpuAndGpu;
-            // model_options.cache_dir = PathBuf::from(".");
-            let mut model = CoreMLModelWithState::new(PathBuf::from(path), model_options);
-            // let mut model = CoreMLModelWithState::from_buf(buf, model_options);
-            model = timeit("load model", || model.load().unwrap());
+    // let mut m = temp_buf_to_path(buf, |path| {
+    // Some(
+    let mut m = timeit("load and compile model", move || {
+        let mut model_options = CoreMLModelOptions::default();
+        model_options.compute_platform = ComputePlatform::CpuAndANE;
+        // model_options.cache_dir = PathBuf::from(".");
+        // let mut model = CoreMLModelWithState::new(PathBuf::from(path), model_options);
+        let mut model = CoreMLBatchModelWithState::from_buf(buf, model_options);
+        model = timeit("load model", || model.load().unwrap());
 
-            return model;
-        }))
-    })
-    .unwrap();
-    let input_name = "eye";
-
+        return model;
+    });
+    // )
+    // })
+    // .unwrap();
     println!("model description:\n{:#?}", m.description());
+    let input_name = "image";
 
     dbg!("model load", proc_mem_usage());
-    return;
 
     let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
     input.fill(1.0f32);
 
-    _ = m.add_input(input_name, input.clone().into_dyn());
+    for i in 0..80 {
+        _ = m.add_input(input_name, input.clone().into_dyn(), i);
+    }
+
     dbg!("load input", proc_mem_usage());
 
     let output = timeit("predict", || {
         return m.predict();
     })
     .unwrap();
+    let outs = &output.outputs;
+    dbg!(outs.len());
     dbg!("predict output in mem", proc_mem_usage());
+
+    // dbg!(&outs[0].get("mask"));
 
     drop(output);
     dbg!("predict output yeeted", proc_mem_usage());
@@ -124,7 +135,7 @@ pub fn main() {
     });
     dbg!("loaded again", proc_mem_usage());
 
-    _ = m.add_input(input_name, input.into_dyn());
+    _ = m.add_input(input_name, input.into_dyn(), 0);
     let _ = timeit("predict", || {
         return m.predict();
     })
