@@ -1,7 +1,7 @@
 import CoreML
 
 class BatchOutput {
-	var batchProvider: MLBatchProvider? = nil 
+	var batchProvider: MLBatchProvider? = nil
 	var error: String? = nil
 	init(error: String? = nil, batchProvider: MLBatchProvider? = nil) {
 		self.batchProvider = batchProvider
@@ -10,11 +10,11 @@ class BatchOutput {
 
 	func getOutputAtIndex(at: Int) -> ModelOutput {
 		let features = self.batchProvider?.features(at: at) as? MLDictionaryFeatureProvider
-		return ModelOutput.init(output: features?.dictionary)
+		return ModelOutput.init(output: features?.dictionary, cpy: true)
 	}
 
 	func count() -> Int {
-		let c =  self.batchProvider?.count
+		let c = self.batchProvider?.count
 		guard let c else { return 0 }
 		return c
 	}
@@ -130,9 +130,11 @@ class BatchModel: @unchecked Sendable {
 			let features = inputs.compactMap { input in
 				input.toFeatureProvider()
 			}
-			let batchProvider = MLArrayBatchProvider.init(array: features);
+			let batchProvider = MLArrayBatchProvider.init(array: features)
 			let output = try self.model?.predictions(from: batchProvider, options: opts)
-			guard let output else { return BatchOutput.init(error: "ran predict without a model loaded into memory") }
+			guard let output else {
+				return BatchOutput.init(error: "ran predict without a model loaded into memory")
+			}
 			return BatchOutput.init(batchProvider: output)
 		} catch {
 			return BatchOutput.init(error: error.localizedDescription)
@@ -221,9 +223,11 @@ class ModelDescription {
 class ModelOutput {
 	var output: [String: Any]? = [:]
 	var error: (any Error)? = nil
-	init(output: [String: Any]?, error: (any Error)? = nil) {
+	var cpy: Bool = false
+	init(output: [String: Any]?, error: (any Error)? = nil, cpy: Bool = false) {
 		self.output = output
 		self.error = error
+		self.cpy = cpy
 	}
 	func hasFailedToLoad() -> Bool {
 		return self.error != nil
@@ -247,14 +251,27 @@ class ModelOutput {
 	func outputF32(name: RustString) -> RustVec<Float32> {
 		if hasFailedToLoad() { return RustVec.init() }
 		let output = self.output!
-		let out = (output[name.toString()]! as? MLMultiArray)!
-		let l = out.count
-		var v = RustVec<Float32>()
-		out.withUnsafeMutableBytes { ptr, strides in
-			let p = ptr.baseAddress!.assumingMemoryBound(to: Float32.self)
-			v = rust_vec_from_ptr_f32(p, UInt(l))
+		if self.cpy {
+			let out = (output[name.toString()]! as? MLFeatureValue)!.multiArrayValue!
+			let l = out.count
+			var v = RustVec<Float32>()
+			print("outputF32: ", name.toString())
+			out.withUnsafeMutableBytes { ptr, strides in
+				let p = ptr.baseAddress!.assumingMemoryBound(to: Float32.self)
+				v = rust_vec_from_ptr_f32_cpy(p, UInt(l))
+			}
+			return v
+		} else {
+			let out = (output[name.toString()]! as? MLMultiArray)!
+			let l = out.count
+			var v = RustVec<Float32>()
+			out.withUnsafeMutableBytes { ptr, strides in
+				let p = ptr.baseAddress!.assumingMemoryBound(to: Float32.self)
+				v = rust_vec_from_ptr_f32(p, UInt(l))
+			}
+			return v
 		}
-		return v
+
 	}
 	func outputI32(name: RustString) -> RustVec<Int32> {
 		if hasFailedToLoad() { return RustVec.init() }
@@ -264,7 +281,11 @@ class ModelOutput {
 		var v = RustVec<Int32>()
 		out.withUnsafeMutableBytes { ptr, strides in
 			let p = ptr.baseAddress!.assumingMemoryBound(to: Int32.self)
-			v = rust_vec_from_ptr_i32(p, UInt(l))
+			if self.cpy {
+				v = rust_vec_from_ptr_i32_cpy(p, UInt(l))
+			} else {
+				v = rust_vec_from_ptr_i32(p, UInt(l))
+			}
 		}
 		return v
 	}
@@ -276,7 +297,11 @@ class ModelOutput {
 		var v = RustVec<UInt16>()
 		out.withUnsafeMutableBytes { ptr, strides in
 			let p = ptr.baseAddress!.assumingMemoryBound(to: UInt16.self)
-			v = rust_vec_from_ptr_u16(p, UInt(l))
+			if self.cpy {
+				v = rust_vec_from_ptr_u16_cpy(p, UInt(l))
+			} else {
+				v = rust_vec_from_ptr_u16(p, UInt(l))
+			}
 		}
 		return v
 	}
@@ -428,7 +453,7 @@ class Model: @unchecked Sendable {
 	init(failedToLoad: Bool) {
 		self.failedToLoad = failedToLoad
 	}
-	
+
 	func getCompiledPath() -> RustString? {
 		return self.compiledPath?.absoluteString.intoRustString()
 	}

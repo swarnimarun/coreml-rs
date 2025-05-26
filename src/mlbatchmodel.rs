@@ -302,6 +302,22 @@ impl CoreMLBatchModel {
     }
 
     pub fn predict(&mut self) -> Result<MLBatchModelOutput, CoreMLError> {
+        let desc = self.model.description();
+        for name in desc.output_names() {
+            let shape = desc.output_shape(name.clone());
+            let ty = desc.output_type(name.clone());
+            match ty.as_str() {
+                "f32" => {
+                    self.outputs.insert(name, ("f32", shape.to_vec()));
+                }
+                _ => {
+                    return Err(CoreMLError::UnknownErrorStatic(
+                        "non-f32 output types are not supported (yet)!",
+                    ))
+                }
+            }
+        }
+
         let output = self.model.predict();
         if let Some(err) = output.getError() {
             return Err(CoreMLError::UnknownError(err));

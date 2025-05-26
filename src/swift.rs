@@ -15,6 +15,9 @@ pub mod swift {
         fn rust_vec_from_ptr_i32(ptr: *mut i32, len: usize) -> Vec<i32>;
         fn rust_vec_from_ptr_f32(ptr: *mut f32, len: usize) -> Vec<f32>;
         fn rust_vec_from_ptr_u16(ptr: *mut u16, len: usize) -> Vec<u16>;
+        fn rust_vec_from_ptr_i32_cpy(ptr: *mut i32, len: usize) -> Vec<i32>;
+        fn rust_vec_from_ptr_f32_cpy(ptr: *mut f32, len: usize) -> Vec<f32>;
+        fn rust_vec_from_ptr_u16_cpy(ptr: *mut u16, len: usize) -> Vec<u16>;
         fn rust_vec_free_f32(ptr: *mut f32, len: usize);
         fn rust_vec_free_i32(ptr: *mut i32, len: usize);
         fn rust_vec_free_u16(ptr: *mut u16, len: usize);
@@ -150,10 +153,23 @@ fn rust_vec_from_ptr_f32(ptr: *mut f32, len: usize) -> Vec<f32> {
 }
 /// performs a memcpy
 fn rust_vec_from_ptr_u16(ptr: *mut u16, len: usize) -> Vec<u16> {
-    unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
+    unsafe { Vec::from_raw_parts(ptr, len, len) }
 }
 /// performs a memcpy
 fn rust_vec_from_ptr_i32(ptr: *mut i32, len: usize) -> Vec<i32> {
+    unsafe { Vec::from_raw_parts(ptr, len, len) }
+}
+
+/// performs a memcpy
+fn rust_vec_from_ptr_f32_cpy(ptr: *mut f32, len: usize) -> Vec<f32> {
+    unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
+}
+/// performs a memcpy
+fn rust_vec_from_ptr_u16_cpy(ptr: *mut u16, len: usize) -> Vec<u16> {
+    unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
+}
+/// performs a memcpy
+fn rust_vec_from_ptr_i32_cpy(ptr: *mut i32, len: usize) -> Vec<i32> {
     unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
 }
 
