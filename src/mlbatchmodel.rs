@@ -117,7 +117,7 @@ impl CoreMLBatchModelWithState {
         }
     }
 
-    /// Doesn't unload the model buffer in case model is loaded from a buffer
+    /// Might fail if system disk space too low(very unlikely)
     pub fn unload(self) -> Result<Self, CoreMLError> {
         if let Self::Loaded(_, info, loader) = self {
             Ok(Self::Unloaded(

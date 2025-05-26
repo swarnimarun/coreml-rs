@@ -171,7 +171,7 @@ impl CoreMLModelWithState {
         }
     }
 
-    /// Doesn't unload the model buffer in case model is loaded from a buffer
+    /// Might fail irrecoverably if the system is too low on disk space(very unlikely)
     pub fn unload(self) -> Result<Self, CoreMLError> {
         if let Self::Loaded(model, info, loader) = self {
             Ok(Self::Unloaded(

@@ -147,15 +147,12 @@ impl std::default::Default for ComputePlatform {
     }
 }
 
-/// performs a memcpy
 fn rust_vec_from_ptr_f32(ptr: *mut f32, len: usize) -> Vec<f32> {
     unsafe { Vec::from_raw_parts(ptr, len, len) }
 }
-/// performs a memcpy
 fn rust_vec_from_ptr_u16(ptr: *mut u16, len: usize) -> Vec<u16> {
     unsafe { Vec::from_raw_parts(ptr, len, len) }
 }
-/// performs a memcpy
 fn rust_vec_from_ptr_i32(ptr: *mut i32, len: usize) -> Vec<i32> {
     unsafe { Vec::from_raw_parts(ptr, len, len) }
 }
