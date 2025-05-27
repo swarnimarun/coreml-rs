@@ -255,7 +255,6 @@ class ModelOutput {
 			let out = (output[name.toString()]! as? MLFeatureValue)!.multiArrayValue!
 			let l = out.count
 			var v = RustVec<Float32>()
-			print("outputF32: ", name.toString())
 			out.withUnsafeMutableBytes { ptr, strides in
 				let p = ptr.baseAddress!.assumingMemoryBound(to: Float32.self)
 				v = rust_vec_from_ptr_f32_cpy(p, UInt(l))

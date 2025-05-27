@@ -434,14 +434,23 @@ impl CoreMLModel {
                 .clone()
                 .into_iter()
                 .filter_map(|(key, (ty, shape))| {
-                    if ty != "f32" {
-                        eprintln!("warning: non-f32 types aren't supported, and will be skipped in the output");
-                        return None;
-                    }
                     let name = key.clone();
-                    let out = output.outputF32(name);
-                    let array = Array::from_shape_vec(shape, out).ok()?;
-                    Some((key, array.into()))
+                    match ty {
+                        "f32" => {
+                            let out = output.outputF32(name);
+                            let array = Array::from_shape_vec(shape, out).ok()?;
+                            Some((key, array.into()))
+                        }
+                        "f16" => {
+                            let out = output.outputU16(name);
+                            let array = reinterpret_u16_to_f16(Array::from_shape_vec(shape, out).ok()?);
+                            Some((key, array.into()))
+                        }
+                        _ => {
+                            eprintln!("warning: type not one of f32 or f16, and will be skipped in the output");
+                            return None;
+                        }
+                    }
                 })
                 .collect(),
         })
@@ -454,4 +463,26 @@ impl CoreMLModel {
         map.insert("output", desc.outputs());
         map
     }
+}
+
+fn reinterpret_u16_to_f16(input: ndarray::ArrayD<u16>) -> ndarray::ArrayD<half::f16> {
+    let shape = input.shape().to_vec();
+    let len = input.len();
+
+    // Consume input and get the raw Vec<u32>
+    let raw_vec = input.into_raw_vec();
+
+    // SAFETY:
+    // - u32 and f32 have the same size
+    // - The underlying data is valid to reinterpret as f32
+    // - This creates a new Vec<f32> with the same bytes
+    let raw_vec_f16 = {
+        let ptr = raw_vec.as_ptr() as *mut half::f16;
+        let capacity = raw_vec.capacity();
+        std::mem::forget(raw_vec); // prevent drop of original vec
+        unsafe { Vec::from_raw_parts(ptr, len, capacity) }
+    };
+
+    // TODO SA: we know unwrap won't cause ShapeError, but avoid unwrap regardless
+    ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&shape), raw_vec_f16).unwrap()
 }
