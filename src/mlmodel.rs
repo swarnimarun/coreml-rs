@@ -17,6 +17,7 @@ pub use crate::swift::MLModelOutput;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum CoreMLError {
     #[error("CoreML Cache IoError: {0}")]
     IoError(std::io::Error),
@@ -38,6 +39,8 @@ pub enum CoreMLError {
     FailedToLoadBatchStatic(&'static str, CoreMLBatchModelWithState),
     #[error("FailedToLoadBatch: coreml model couldn't be loaded: {0}")]
     FailedToBatchLoad(String, CoreMLBatchModelWithState),
+    #[error("OutOfStorage: coreml model couldn't be as not enough storage on disk")]
+    OutOfStorageError(String),
 }
 
 #[derive(Default, Clone)]
@@ -182,7 +185,8 @@ impl CoreMLModelWithState {
                         _ = std::fs::remove_dir_all(&t);
                         _ = std::fs::create_dir_all(&t);
                         let path = t.path().join("mlmodel_cache");
-                        std::fs::write(&path, v).unwrap();
+                        _ = std::fs::write(&path, v)
+                            .map_err(|err| CoreMLError::OutOfStorageError(err.to_string()));
                         let res = std::fs::read(&path).map_err(CoreMLError::IoError)?;
                         _ = std::fs::remove_dir_all(&t);
                         CoreMLModelLoader::Buffer(res)

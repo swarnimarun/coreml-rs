@@ -100,7 +100,7 @@ pub fn main() {
     let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
     input.fill(1.0f32);
 
-    for i in 0..80 {
+    for i in 0..150 {
         _ = m.add_input(input_name, input.clone().into_dyn(), i);
     }
 
