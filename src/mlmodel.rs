@@ -39,8 +39,6 @@ pub enum CoreMLError {
     FailedToLoadBatchStatic(&'static str, CoreMLBatchModelWithState),
     #[error("FailedToLoadBatch: coreml model couldn't be loaded: {0}")]
     FailedToBatchLoad(String, CoreMLBatchModelWithState),
-    #[error("OutOfStorage: coreml model couldn't be as not enough storage on disk")]
-    OutOfStorageError(String),
 }
 
 #[derive(Default, Clone)]
@@ -185,8 +183,7 @@ impl CoreMLModelWithState {
                         _ = std::fs::remove_dir_all(&t);
                         _ = std::fs::create_dir_all(&t);
                         let path = t.path().join("mlmodel_cache");
-                        _ = std::fs::write(&path, v)
-                            .map_err(|err| CoreMLError::OutOfStorageError(err.to_string()));
+                        _ = std::fs::write(&path, v).map_err(CoreMLError::IoError)?;
                         let res = std::fs::read(&path).map_err(CoreMLError::IoError)?;
                         _ = std::fs::remove_dir_all(&t);
                         CoreMLModelLoader::Buffer(res)
