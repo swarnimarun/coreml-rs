@@ -210,7 +210,7 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "coreml-rs"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "bytemuck",
