@@ -70,6 +70,37 @@ pub fn main() {
 
 **Note**: This is a simplified example. Actual implementation may vary based on the model's input and output specifications.
 
+## Running Examples
+
+### Prerequisites
+
+On macOS, you need to have the Swift runtime libraries available. If you encounter errors about missing Swift libraries, set the `DYLD_LIBRARY_PATH`:
+
+```bash
+export DYLD_LIBRARY_PATH="/usr/lib/swift:$DYLD_LIBRARY_PATH"
+```
+
+### Image Inference Example
+
+The `infer_images` example demonstrates how to run inference on image files:
+
+```bash
+# Ensure you have the required directories and files
+# - ./models/model_13.mlmodel (the Core ML model)
+# - ./data/samples/ (directory containing input images)
+
+# Run the example
+cargo run --example infer_images
+
+# Or with the library path set
+DYLD_LIBRARY_PATH="/usr/lib/swift:$DYLD_LIBRARY_PATH" cargo run --example infer_images
+```
+
+The example will:
+- Load images from `./data/samples/`
+- Run inference using the Core ML model
+- Save output images to `./output/` with the same filenames as the inputs
+
 ## Contributing
 
 Contributions are welcome!

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use swift::{BatchOutput, ComputePlatform, ModelOutput};
+use swift::ComputePlatform;
 
 use crate::mlarray::MLArray;
 
