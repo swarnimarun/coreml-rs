@@ -63,13 +63,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::remove_dir_all(&cli.output)?;
     fs::create_dir_all(&cli.output)?;
 
-    let buf = fs::read(&cli.model)?;
     let mut opts = CoreMLModelOptions::default();
     opts.compute_platform = ComputePlatform::CpuAndANE;
-    let mut model = CoreMLModelWithState::from_buf(buf, opts);
+    let mut model: CoreMLModelWithState;
+    if cli.model.is_file() {
+        let buf = fs::read(&cli.model)?;
+        model = CoreMLModelWithState::from_buf(buf, opts);
+    } else {
+        model = CoreMLModelWithState::new(PathBuf::from(&cli.model), opts);
+    }
 
     model = model.load().map_err(|e| format!("Failed to load model: {:?}", e))?;
-    let shape = model.input_shape()?;
+    let shape = model.default_input_shape()?;
+    let input_name = model.default_input_name()?;
     let (width, height) = (shape[0], shape[1]);
     
     let mut inputs: Vec<PathBuf>;
@@ -84,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     for img_path in inputs.iter() {
         let image_details = load_image_to_tensor(img_path, width.try_into().unwrap(), height.try_into().unwrap())?;
-        model.add_input("image", image_details.buffer.into_dyn()).map_err(|e| format!("{:?}", e))?;
+        model.add_input(&input_name, image_details.buffer.into_dyn()).map_err(|e| format!("{:?}", e))?;
         let output = model.predict().map_err(|e| format!("{:?}", e))?;
         let (_, raw_output) = output.outputs.into_iter().next().expect("no output");
         

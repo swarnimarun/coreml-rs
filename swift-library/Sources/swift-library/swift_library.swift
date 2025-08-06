@@ -150,6 +150,32 @@ class ModelDescription {
 
 	func failedToLoad() -> Bool { return self.description == nil }
 
+    func default_input_shape() -> RustVec<UInt> {
+        let ret = RustVec<UInt>()
+        if !failedToLoad() {
+            let inputParams = self.description!.inputDescriptionsByName
+            if inputParams.count != 1 {
+                print("Ambiguous input shape, model likely has more than one input. Specify the shape yourself.")
+            }
+            for num in inputParams.first!.value.multiArrayConstraint!.shape {
+                ret.push(value: UInt(truncating: num))
+            }
+        }
+        return ret
+    }
+
+    func default_input_name() -> RustString {
+        if !failedToLoad() {
+            let inputParams = self.description!.inputDescriptionsByName
+            if inputParams.count != 1 {
+                print("Ambiguous input name, model likely has more than one input. Specify the name yourself.")
+                return "".intoRustString()
+            }
+            return inputParams.first!.key.intoRustString()
+        }
+        return "".intoRustString()
+    }
+
 	func inputs() -> RustVec<RustString> {
 		let ret = RustVec<RustString>()
 		if !failedToLoad() {

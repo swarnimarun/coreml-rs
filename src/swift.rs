@@ -128,6 +128,8 @@ pub mod swift {
         fn output_type(&self, name: String) -> String;
         fn output_shape(&self, name: String) -> Vec<usize>;
         fn input_shape(&self, name: String) -> Vec<usize>;
+        fn default_input_shape(&self) -> Vec<usize>;
+        fn default_input_name(&self) -> String;
     }
 
     extern "Swift" {

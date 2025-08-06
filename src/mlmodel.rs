@@ -256,10 +256,17 @@ impl CoreMLModelWithState {
         }
     }
 
-    pub fn input_shape(&self) -> Result<Vec<usize>, CoreMLError> {
+    pub fn default_input_shape(&self) -> Result<Vec<usize>, CoreMLError> {
         match self {
             CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
-            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.input_shape()),
+            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.default_input_shape()),
+        }
+    }
+
+    pub fn default_input_name(&self) -> Result<String, CoreMLError> {
+        match self {
+            CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
+            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.default_input_name()),
         }
     }
 
@@ -472,8 +479,12 @@ impl CoreMLModel {
         map
     }
 
-    pub fn input_shape(&self) -> Vec<usize> {
-        self.model.description().input_shape(String::from("image"))
+    pub fn default_input_shape(&self) -> Vec<usize> {
+        self.model.description().default_input_shape()
+    }
+
+    pub fn default_input_name(&self) -> String {
+        self.model.description().default_input_name()
     }
 }
 

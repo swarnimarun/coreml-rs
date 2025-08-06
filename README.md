@@ -90,10 +90,11 @@ The `infer_images` example demonstrates how to run inference on image files:
 # - ./data/samples/ (directory containing input images)
 
 # Run the example
-cargo run --example infer_images
+export DYLD_LIBRARY_PATH="/usr/lib/swift:$DYLD_LIBRARY_PATH"
+cargo build 
+# Change the `--model` and `--input` paths as needed
+./target/debug/retouch --model ../retouching-helper/models/FaceShine/blendmap-V1/model_21.mlpackage/Data/com.apple.CoreML/model.mlmodel --input ./data/samples/
 
-# Or with the library path set
-DYLD_LIBRARY_PATH="/usr/lib/swift:$DYLD_LIBRARY_PATH" cargo run --example infer_images
 ```
 
 The example will:
