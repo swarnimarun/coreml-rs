@@ -8,6 +8,7 @@ license-file = "LICENSE"
 [dependencies]
 anyhow = { version = "1", features = ["backtrace"] }
 bytemuck = "1.21.0"
+clap = { version = "4.5", features = ["derive"] }
 flate2 = "1.1.0"
 half = { version = "2.4.1", features = ["alloc", "serde", "zerocopy"] }
 ndarray = { version = "0.16.1", features = ["serde", "blas"] }
@@ -15,6 +16,7 @@ num = "0.4.3"
 swift-bridge = "0.1"
 tempdir = "0.3.7"
 thiserror = "2.0.12"
+image = "0.24.6"
 
 [build-dependencies]
 swift-bridge-build = "0.1"
@@ -23,4 +25,3 @@ swift-bridge-build = "0.1"
 libproc = "0.14.4"
 sha2 = "0.10.9"
 zip = "2.6.1"
-image = "0.24.6"
