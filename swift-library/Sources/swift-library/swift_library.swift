@@ -322,6 +322,9 @@ func initWithCompiledAsset(
 	case .CpuAndGpu:
 		computeUnits = .cpuAndGPU
 		break
+	case .All:
+		computeUnits = .all
+		break
 	}
 	let data = Data.init(
 		bytesNoCopy: ptr, count: len,
@@ -353,6 +356,9 @@ func initWithCompiledAssetBatch(
 	case .CpuAndGpu:
 		computeUnits = .cpuAndGPU
 		break
+	case .All:
+		computeUnits = .all
+		break
 	}
 	let data = Data.init(
 		bytesNoCopy: ptr, count: len,
@@ -381,6 +387,9 @@ func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) ->
 		break
 	case .CpuAndGpu:
 		computeUnits = .cpuAndGPU
+		break
+	case .All:
+		computeUnits = .all
 		break
 	}
 	var compiledPath: URL
@@ -427,6 +436,9 @@ func initWithPathBatch(path: RustString, compute: ComputePlatform, compiled: Boo
 		break
 	case .CpuAndGpu:
 		computeUnits = .cpuAndGPU
+		break
+	case .All:
+		computeUnits = .all
 		break
 	}
 	var compiledPath: URL

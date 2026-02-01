@@ -11,6 +11,7 @@ pub mod swift {
         Cpu,
         CpuAndANE,
         CpuAndGpu,
+        All,
     }
     extern "Rust" {
         fn rust_vec_from_ptr_i32(ptr: *mut i32, len: usize) -> Vec<i32>;
