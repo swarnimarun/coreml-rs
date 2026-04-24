@@ -20,6 +20,7 @@ thiserror = "2.0.12"
 swift-bridge-build = "0.1"
 
 [dev-dependencies]
+image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
 libproc = "0.14.4"
 sha2 = "0.10.9"
 zip = "2.6.1"

@@ -385,12 +385,13 @@ func initWithPath(path: RustString, compute: ComputePlatform, compiled: Bool) ->
 	}
 	var compiledPath: URL
 	if compiled {
-		compiledPath = URL(string: path.toString())!
+		compiledPath = urlFromPath(path.toString())
 	} else {
-		let url = URL(string: path.toString())!
+		let url = urlFromPath(path.toString())
 		do {
 			compiledPath = try MLModel.compileModel(at: url)
 		} catch {
+			print("Failed to compile CoreML model at \(url): \(error)")
 			return Model.init(failedToLoad: true)
 		}
 	}
@@ -431,12 +432,13 @@ func initWithPathBatch(path: RustString, compute: ComputePlatform, compiled: Boo
 	}
 	var compiledPath: URL
 	if compiled {
-		compiledPath = URL(string: path.toString())!
+		compiledPath = urlFromPath(path.toString())
 	} else {
-		let url = URL(string: path.toString())!
+		let url = urlFromPath(path.toString())
 		do {
 			compiledPath = try MLModel.compileModel(at: url)
 		} catch {
+			print("Failed to compile CoreML batch model at \(url): \(error)")
 			return BatchModel.init(failedToLoad: true)
 		}
 	}
@@ -444,6 +446,13 @@ func initWithPathBatch(path: RustString, compute: ComputePlatform, compiled: Boo
 	m.compiledPath = compiledPath
 	m.computeUnits = computeUnits
 	return m
+}
+
+func urlFromPath(_ path: String) -> URL {
+	if path.hasPrefix("file://") {
+		return URL(string: path)!
+	}
+	return URL(fileURLWithPath: path)
 }
 
 struct RuntimeError: LocalizedError {
@@ -553,12 +562,11 @@ class Model: @unchecked Sendable {
 		do {
 			let input = try MLDictionaryFeatureProvider.init(dictionary: self.dict)
 			let opts = MLPredictionOptions.init()
-			opts.outputBackings = self.outputs
-			try self.model!.prediction(from: input, options: opts)
-			let outputs = self.outputs
+			let prediction = try self.model!.prediction(from: input, options: opts)
+			let outputs = (prediction as? MLDictionaryFeatureProvider)?.dictionary
 			self.outputs = [:]
 			self.dict = [:]
-			return ModelOutput(output: outputs, error: nil)
+			return ModelOutput(output: outputs, error: nil, cpy: true)
 		} catch {
 			// print("Unexpected predict error: \(error)")
 			return ModelOutput(output: nil, error: error)

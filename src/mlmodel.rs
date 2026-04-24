@@ -269,6 +269,20 @@ impl CoreMLModelWithState {
             CoreMLModelWithState::Loaded(core_mlmodel, _, _) => core_mlmodel.predict(),
         }
     }
+
+    pub fn input_shapes(&self) -> Result<HashMap<String, Vec<usize>>, CoreMLError> {
+        match self {
+            CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
+            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.input_shapes()),
+        }
+    }
+
+    pub fn output_shapes(&self) -> Result<HashMap<String, Vec<usize>>, CoreMLError> {
+        match self {
+            CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
+            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.output_shapes()),
+        }
+    }
 }
 
 // Info required to create a coreml model
@@ -474,6 +488,36 @@ impl CoreMLModel {
         map.insert("output", desc.outputs());
         map
     }
+
+    pub fn input_shapes(&self) -> HashMap<String, Vec<usize>> {
+        let desc = self.model.description();
+        desc.inputs()
+            .into_iter()
+            .filter_map(|input| feature_name_from_description(&input))
+            .map(|name| {
+                let shape = desc.input_shape(name.clone());
+                (name, shape)
+            })
+            .collect()
+    }
+
+    pub fn output_shapes(&self) -> HashMap<String, Vec<usize>> {
+        let desc = self.model.description();
+        desc.output_names()
+            .into_iter()
+            .map(|name| {
+                let shape = desc.output_shape(name.clone());
+                (name, shape)
+            })
+            .collect()
+    }
+}
+
+fn feature_name_from_description(description: &str) -> Option<String> {
+    description
+        .split_once(':')
+        .map(|(name, _)| name.trim().to_string())
+        .filter(|name| !name.is_empty())
 }
 
 fn reinterpret_u16_to_f16(input: ndarray::ArrayD<u16>) -> ndarray::ArrayD<half::f16> {
