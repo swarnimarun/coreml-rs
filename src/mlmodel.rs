@@ -53,7 +53,6 @@ impl Default for CoreMLModelOptions {
         Self {
             compute_platform: ComputePlatform::default(),
             cache_dir: PathBuf::default(),
-            normalize_input_by_255: false,
             disable_experimental_mle: false,
         }
     }
@@ -323,7 +322,6 @@ impl std::fmt::Debug for Model {
 
 impl CoreMLModel {
     pub fn load_from_path(path: String, info: CoreMLModelInfo, compiled: bool) -> Self {
-        let coreml_model = Self {
         let mut coreml_model = Self {
             model: modelWithPath(path, info.opts.compute_platform, compiled),
             outputs: Default::default(),
@@ -335,7 +333,6 @@ impl CoreMLModel {
     }
 
     pub fn load_buffer(mut buf: Vec<u8>, info: CoreMLModelInfo) -> Self {
-        let coreml_model = Self {
         let mut coreml_model = Self {
             model: modelWithAssets(
                 buf.as_mut_ptr(),
