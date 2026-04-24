@@ -474,6 +474,7 @@ class Model: @unchecked Sendable {
 	var dict: [String: Any] = [:]
 	var outputs: [String: Any] = [:]
 	var computeUnits: MLComputeUnits = .cpuAndNeuralEngine
+	var disableExperimentalMLE: Bool = false
 
 	var failedToLoad: Bool
 	init(failedToLoad: Bool) {
@@ -488,10 +489,17 @@ class Model: @unchecked Sendable {
 		return self.failedToLoad
 	}
 
+	func setDisableExperimentalMLE(disabled: Bool) {
+		self.disableExperimentalMLE = disabled
+	}
+
 	func load() -> Bool {
 		if hasFailedToLoad() { return false }
 		let config = MLModelConfiguration.init()
 		config.computeUnits = self.computeUnits
+		if self.disableExperimentalMLE {
+			config.setValue(1, forKey: "experimentalMLE5EngineUsage")
+		}
 		do {
 			if self.compiledPath == nil {
 				let semaphore = DispatchSemaphore(value: 0)

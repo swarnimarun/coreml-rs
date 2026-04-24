@@ -41,10 +41,22 @@ pub enum CoreMLError {
     FailedToBatchLoad(String, CoreMLBatchModelWithState),
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct CoreMLModelOptions {
     pub compute_platform: ComputePlatform,
     pub cache_dir: PathBuf,
+    pub disable_experimental_mle: bool,
+}
+
+impl Default for CoreMLModelOptions {
+    fn default() -> Self {
+        Self {
+            compute_platform: ComputePlatform::default(),
+            cache_dir: PathBuf::default(),
+            normalize_input_by_255: false,
+            disable_experimental_mle: false,
+        }
+    }
 }
 
 impl std::fmt::Debug for CoreMLModelOptions {
@@ -57,6 +69,10 @@ impl std::fmt::Debug for CoreMLModelOptions {
                     ComputePlatform::CpuAndANE => &"CpuAndAne",
                     ComputePlatform::CpuAndGpu => &"CpuAndGpu",
                 },
+            )
+            .field(
+                "disable_experimental_mle",
+                &self.disable_experimental_mle,
             )
             .finish()
     }
@@ -308,14 +324,19 @@ impl std::fmt::Debug for Model {
 impl CoreMLModel {
     pub fn load_from_path(path: String, info: CoreMLModelInfo, compiled: bool) -> Self {
         let coreml_model = Self {
+        let mut coreml_model = Self {
             model: modelWithPath(path, info.opts.compute_platform, compiled),
             outputs: Default::default(),
         };
+        coreml_model
+            .model
+            .setDisableExperimentalMLE(info.opts.disable_experimental_mle);
         coreml_model
     }
 
     pub fn load_buffer(mut buf: Vec<u8>, info: CoreMLModelInfo) -> Self {
         let coreml_model = Self {
+        let mut coreml_model = Self {
             model: modelWithAssets(
                 buf.as_mut_ptr(),
                 buf.len() as isize,
@@ -323,6 +344,9 @@ impl CoreMLModel {
             ),
             outputs: Default::default(),
         };
+        coreml_model
+            .model
+            .setDisableExperimentalMLE(info.opts.disable_experimental_mle);
         std::mem::forget(buf);
         coreml_model
     }
