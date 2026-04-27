@@ -206,7 +206,12 @@ fn image_file_tensor(path: &Path, shape: &[usize]) -> Result<ArrayD<f32>> {
     Ok(tensor)
 }
 
-fn write_output_files(output_dir: &Path, name: &str, values: &ArrayD<f32>, stats: &Stats) -> Result<()> {
+fn write_output_files(
+    output_dir: &Path,
+    name: &str,
+    values: &ArrayD<f32>,
+    stats: &Stats,
+) -> Result<()> {
     let base = output_dir.join(sanitize_filename(name));
 
     let raw_path = base.with_extension("f32");

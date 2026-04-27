@@ -11,7 +11,7 @@ fn main() -> Result<()> {
 
     let mut options = CoreMLModelOptions::default();
     options.compute_platform = args.compute_platform;
-    options.normalize_input_by_255 = args.normalize_input_by_255;
+    // options.normalize_input_by_255 = args.normalize_input_by_255;
 
     let mut model = CoreMLModelWithState::new(&args.model_path, options)
         .load()

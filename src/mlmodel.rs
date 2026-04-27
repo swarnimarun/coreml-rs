@@ -9,6 +9,7 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     path::{Path, PathBuf},
+    time::Duration,
 };
 use tempfile::NamedTempFile;
 
@@ -69,10 +70,7 @@ impl std::fmt::Debug for CoreMLModelOptions {
                     ComputePlatform::CpuAndGpu => &"CpuAndGpu",
                 },
             )
-            .field(
-                "disable_experimental_mle",
-                &self.disable_experimental_mle,
-            )
+            .field("disable_experimental_mle", &self.disable_experimental_mle)
             .finish()
     }
 }
@@ -285,6 +283,26 @@ impl CoreMLModelWithState {
         }
     }
 
+    pub fn predict_with_retry(
+        &mut self,
+        options: PredictRetryOptions,
+    ) -> Result<MLModelOutput, CoreMLError> {
+        self.predict_with_retry_if(options, |_| true)
+    }
+
+    pub fn predict_with_retry_if(
+        &mut self,
+        options: PredictRetryOptions,
+        should_retry: impl FnMut(&CoreMLError) -> bool,
+    ) -> Result<MLModelOutput, CoreMLError> {
+        match self {
+            CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
+            CoreMLModelWithState::Loaded(core_mlmodel, _, _) => {
+                core_mlmodel.predict_with_retry_if(options, should_retry)
+            }
+        }
+    }
+
     pub fn input_shapes(&self) -> Result<HashMap<String, Vec<usize>>, CoreMLError> {
         match self {
             CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
@@ -297,6 +315,79 @@ impl CoreMLModelWithState {
             CoreMLModelWithState::Unloaded(_, _) => Err(CoreMLError::ModelNotLoaded),
             CoreMLModelWithState::Loaded(core_mlmodel, _, _) => Ok(core_mlmodel.output_shapes()),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RetryBackoff {
+    None,
+    Fixed(Duration),
+    Exponential {
+        initial: Duration,
+        multiplier: f64,
+        max: Duration,
+    },
+}
+
+impl RetryBackoff {
+    fn delay(self, retry_index: usize) -> Duration {
+        match self {
+            RetryBackoff::None => Duration::ZERO,
+            RetryBackoff::Fixed(delay) => delay,
+            RetryBackoff::Exponential {
+                initial,
+                multiplier,
+                max,
+            } => {
+                let multiplier = multiplier.max(1.0);
+                let delay = initial.mul_f64(multiplier.powi(retry_index as i32));
+                delay.min(max)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PredictRetryOptions {
+    pub max_retries: usize,
+    pub backoff: RetryBackoff,
+}
+
+impl PredictRetryOptions {
+    pub const fn none() -> Self {
+        Self {
+            max_retries: 0,
+            backoff: RetryBackoff::None,
+        }
+    }
+
+    pub const fn fixed(max_retries: usize, delay: Duration) -> Self {
+        Self {
+            max_retries,
+            backoff: RetryBackoff::Fixed(delay),
+        }
+    }
+
+    pub const fn exponential(
+        max_retries: usize,
+        initial: Duration,
+        multiplier: f64,
+        max: Duration,
+    ) -> Self {
+        Self {
+            max_retries,
+            backoff: RetryBackoff::Exponential {
+                initial,
+                multiplier,
+                max,
+            },
+        }
+    }
+}
+
+impl Default for PredictRetryOptions {
+    fn default() -> Self {
+        Self::none()
     }
 }
 
@@ -454,14 +545,19 @@ impl CoreMLModel {
         true
     }
 
-    pub fn predict(&mut self) -> Result<MLModelOutput, CoreMLError> {
+    fn bind_output_buffers(&mut self) -> Result<(), CoreMLError> {
+        self.outputs.clear();
         let desc = self.model.description();
         for name in desc.output_names() {
             let output_shape = desc.output_shape(name.clone());
             let ty = desc.output_type(name.clone());
             match ty.as_str() {
                 "f32" => {
-                    self.add_output_f32(name, Array::<f32, _>::zeros(output_shape));
+                    if !self.add_output_f32(name, Array::<f32, _>::zeros(output_shape)) {
+                        return Err(CoreMLError::UnknownErrorStatic(
+                            "failed to bind output to model",
+                        ));
+                    }
                 }
                 _ => {
                     return Err(CoreMLError::UnknownErrorStatic(
@@ -470,6 +566,10 @@ impl CoreMLModel {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn run_bound_predict(&mut self) -> Result<MLModelOutput, CoreMLError> {
         let output = self.model.predict();
         if let Some(err) = output.getError() {
             return Err(CoreMLError::UnknownError(err));
@@ -500,6 +600,40 @@ impl CoreMLModel {
                 })
                 .collect(),
         })
+    }
+
+    pub fn predict(&mut self) -> Result<MLModelOutput, CoreMLError> {
+        self.predict_with_retry(PredictRetryOptions::none())
+    }
+
+    pub fn predict_with_retry(
+        &mut self,
+        options: PredictRetryOptions,
+    ) -> Result<MLModelOutput, CoreMLError> {
+        self.predict_with_retry_if(options, |_| true)
+    }
+
+    pub fn predict_with_retry_if(
+        &mut self,
+        options: PredictRetryOptions,
+        mut should_retry: impl FnMut(&CoreMLError) -> bool,
+    ) -> Result<MLModelOutput, CoreMLError> {
+        self.bind_output_buffers()?;
+
+        for attempt in 0..=options.max_retries {
+            match self.run_bound_predict() {
+                Ok(output) => return Ok(output),
+                Err(err) if attempt < options.max_retries && should_retry(&err) => {
+                    let delay = options.backoff.delay(attempt);
+                    if !delay.is_zero() {
+                        std::thread::sleep(delay);
+                    }
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        unreachable!("retry loop always returns from success or final failure")
     }
 
     pub fn description(&self) -> HashMap<&str, Vec<String>> {
