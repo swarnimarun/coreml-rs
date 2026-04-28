@@ -1,218 +1,59 @@
-## Core-ML Rust Bindings (Work in Progress)
+# CoreML-RS
 
-`coreml-rs` is an experimental Rust library aimed at providing Rust bindings for Apple's Core ML framework.
-Core ML is Apple's machine learning framework designed to integrate machine learning models into iOS, macOS, watchOS, and tvOS applications.
+Rust bindings for Apple's [Core ML](https://developer.apple.com/documentation/coreml) framework using [swift-bridge](https://github.com/chinedufn/swift-bridge).
+Load `.mlmodel` / `.mlpackage` files and run inference on macOS — with CPU, GPU, or Apple Neural Engine.
 
-### NOTES:
+## Quick Start
 
-`libswift_Concurrency.dylib` is required for the builds to work, put the dylib next to the built binary to run the process.
+```toml
+[dependencies]
+coreml-rs = { version = "0.5", git = "https://github.com/swarnimarun/coreml-rs" }
+ndarray = "0.16"
+```
 
-## Status
+```rust
+use coreml_rs::{CoreMLModelWithState, CoreMLModelOptions, ComputePlatform};
+use ndarray::Array4;
 
-This project is currently work in progress.
-The primary goal is to enable Rust developers to utilize Core ML models within their applications, leveraging Rust's performance and safety features for the rest of the ML infrastructure.
+fn main() {
+    let options = CoreMLModelOptions {
+        compute_platform: ComputePlatform::CpuAndANE,
+        ..Default::default()
+    };
 
-## Roadmap
+    let mut model = CoreMLModelWithState::new("model.mlpackage", options)
+        .load()
+        .unwrap();
 
-- Cleanup & fix bugs with the types and allow more input formats.
-- Build zerocopy types for more efficiently passing inputs and outputs.
-- Provide more configuration options for models.
+    let input = Array4::<f32>::zeros((1, 3, 512, 512));
+    model.add_input("image", input.into_dyn()).unwrap();
+
+    let output = model.predict().unwrap();
+    let result: ndarray::ArrayD<f32> = output.outputs["output_1"].extract_to_tensor();
+}
+```
 
 ## Features
 
-- **Model Loading**: Load Core ML models into Rust applications.
-- **Inference**: Perform inference using loaded models.
-- **Data Handling**: Manage input and output data for model inference.
+- Load models from file path, raw bytes, or pre-compiled cache
+- Single and batch inference
+- Compute platform selection: CPU, CPU+GPU, CPU+Apple Neural Engine
+- Memory management: load/unload/reload, persist buffer to disk
+- Retry with configurable backoff
+- Model introspection (input/output shapes, descriptions)
+- f32, f16, and i32 input support (f32 output)
 
-## Installation
+## Requirements
 
-To include `coreml-rs` in your project, add the following to your `Cargo.toml` dependencies:
-```toml
-[dependencies]
-coreml-rs = { version = "0.4", git = "https://github.com/swarnimarun/coreml-rs" }
-```
+- macOS with Xcode and Command Line Tools
+- `libswift_Concurrency.dylib` must be findable at runtime — see [setup guide](docs/setup.md)
 
-## Usage
+## Documentation
 
-### Simple Inference
+- [Setup Guide](docs/setup.md) — prerequisites, runtime dependencies, model formats, troubleshooting
+- [Usage Guide](docs/usage.md) — full API reference with examples
+- [Roadmap](docs/roadmap.md) — planned improvements and known issues
 
-Load a Core ML model from a `.mlmodel` file and perform a single inference:
+## License
 
-```rust
-use coreml_rs::{ComputePlatform, CoreMLModelOptions, CoreMLModelWithState};
-use ndarray::Array4;
-
-pub fn main() {
-    let file = std::fs::read("./demo/model_3.mlmodel").unwrap();
-
-    let mut model_options = CoreMLModelOptions::default();
-    model_options.compute_platform = ComputePlatform::CpuAndANE;
-
-    let mut model = CoreMLModelWithState::from_buf(file, model_options);
-
-    let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
-    input.fill(1.0f32);
-
-    let Ok(_) = model.add_input("image", input.into_dyn()) else {
-        panic!("failed to add input feature, `image` to the model");
-    };
-
-    let output = model.predict();
-
-    let v = output.unwrap().bytesFrom("output_1".to_string());
-    let output: Array4<f32> = Array4::from_shape_vec([1, 3, 2048, 2048], v).unwrap();
-
-    // Use output as needed
-}
-```
-
-### Batch Inference
-
-Perform batch inference by adding multiple inputs:
-
-```rust
-use coreml_rs::{ComputePlatform, CoreMLModelOptions, CoreMLModelWithState};
-use ndarray::Array4;
-
-pub fn main() {
-    let file = std::fs::read("./demo/model_3.mlmodel").unwrap();
-
-    let mut model_options = CoreMLModelOptions::default();
-    model_options.compute_platform = ComputePlatform::CpuAndANE;
-
-    let mut model = CoreMLModelWithState::from_buf(file, model_options);
-
-    let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
-    input.fill(1.0f32);
-
-    // Add multiple inputs for batch processing
-    for i in 0..10 {
-        let _ = model.add_input("image", input.clone().into_dyn(), i);
-    }
-
-    let output = model.predict().unwrap();
-
-    // Process batch outputs
-    for i in 0..10 {
-        let v = output.bytesFrom(&format!("output_1_{}", i));
-        let batch_output: Array4<f32> = Array4::from_shape_vec([1, 3, 2048, 2048], v).unwrap();
-        // Use batch_output as needed
-    }
-}
-```
-
-### Loading from Zip Archive
-
-Load a model from a zip archive containing an `.mlpackage`:
-
-```rust
-use coreml_rs::{ComputePlatform, CoreMLModelOptions, CoreMLModelWithState};
-use ndarray::Array4;
-use std::path::PathBuf;
-
-fn unzip_to_path_from_hash(buf: &[u8]) -> Option<PathBuf> {
-    fn get_cache_filename(model_buffer: &[u8]) -> String {
-        use sha2::Digest;
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(model_buffer);
-        let hash = hasher.finalize();
-        format!("{:x}.mlpackage", hash)
-    }
-    let name = get_cache_filename(buf);
-
-    let path = PathBuf::from("/tmp/coreml-aftershoot/");
-    let path = path.join(name);
-    _ = std::fs::remove_dir_all(&path);
-    _ = std::fs::remove_file(&path);
-
-    let mut res = zip::ZipArchive::new(std::io::Cursor::new(buf)).ok()?;
-    res.extract(&path).ok()?;
-
-    let m = path.join("model.mlpackage");
-    if m.exists() {
-        Some(m)
-    } else {
-        None
-    }
-}
-
-pub fn main() {
-    let buf = std::fs::read("./demo/model_2.zip").unwrap();
-
-    let model_path = unzip_to_path_from_hash(&buf).unwrap();
-
-    let mut model_options = CoreMLModelOptions::default();
-    model_options.compute_platform = ComputePlatform::CpuAndANE;
-
-    let mut model = CoreMLModelWithState::new(model_path, model_options).load().unwrap();
-
-    let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
-    input.fill(1.0f32);
-
-    let Ok(_) = model.add_input("image", input.into_dyn()) else {
-        panic!("failed to add input feature, `image` to the model");
-    };
-
-    let output = model.predict();
-
-    let v = output.unwrap().bytesFrom("output_1".to_string());
-    let output: Array4<f32> = Array4::from_shape_vec([1, 3, 2048, 2048], v).unwrap();
-
-    // Use output as needed
-}
-```
-
-### Memory Management
-
-Unload and reload models to manage memory usage:
-
-```rust
-use coreml_rs::{ComputePlatform, CoreMLModelOptions, CoreMLModelWithState};
-use ndarray::Array4;
-
-pub fn main() {
-    let file = std::fs::read("./demo/model_3.mlmodel").unwrap();
-
-    let mut model_options = CoreMLModelOptions::default();
-    model_options.compute_platform = ComputePlatform::CpuAndANE;
-
-    let mut model = CoreMLModelWithState::from_buf(file, model_options);
-
-    let mut input = Array4::<f32>::zeros((1, 3, 512, 512));
-    input.fill(1.0f32);
-
-    let Ok(_) = model.add_input("image", input.clone().into_dyn()) else {
-        panic!("failed to add input feature, `image` to the model");
-    };
-
-    let output = model.predict();
-
-    let v = output.unwrap().bytesFrom("output_1".to_string());
-    let output: Array4<f32> = Array4::from_shape_vec([1, 3, 2048, 2048], v).unwrap();
-
-    // Unload model to free memory
-    let unloaded_model = model.unload().unwrap();
-
-    // Later, reload the model
-    let mut model = unloaded_model.load().unwrap();
-
-    // Add input again and predict
-    let Ok(_) = model.add_input("image", input.into_dyn()) else {
-        panic!("failed to add input feature, `image` to the model");
-    };
-
-    let output = model.predict();
-
-    let v = output.unwrap().bytesFrom("output_1".to_string());
-    let output: Array4<f32> = Array4::from_shape_vec([1, 3, 2048, 2048], v).unwrap();
-
-    // Use output as needed
-}
-```
-
-**Note**: These examples assume specific model inputs/outputs. Adjust based on your model's specifications.
-
-## Contributing
-
-Contributions are welcome!
-If you have experience with Core ML and Rust, consider helping to advance this project.
+MIT
