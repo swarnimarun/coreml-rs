@@ -13,7 +13,6 @@ half = { version = "2.4.1", features = ["alloc", "serde", "zerocopy"] }
 ndarray = { version = "0.16.1", features = ["serde", "blas"] }
 num = "0.4.3"
 swift-bridge = "0.1"
-tempfile = "3.0"
 thiserror = "2.0.12"
 
 [build-dependencies]

@@ -12,7 +12,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
-use tempfile::NamedTempFile;
+
 
 pub use crate::swift::MLModelOutput;
 
@@ -124,11 +124,8 @@ impl CoreMLBatchModelWithState {
                 info,
                 match loader {
                     CoreMLModelLoader::Buffer(v) => {
-                        let mut temp_file = NamedTempFile::new().map_err(CoreMLError::IoError)?;
-                        temp_file.write_all(&v).map_err(CoreMLError::IoError)?;
-                        CoreMLModelLoader::Buffer(
-                            std::fs::read(temp_file.path()).map_err(CoreMLError::IoError)?,
-                        )
+                        let res = crate::temp::write_temp_file(&v).map_err(CoreMLError::IoError)?;
+                        CoreMLModelLoader::Buffer(res)
                     }
                     x => x,
                 },

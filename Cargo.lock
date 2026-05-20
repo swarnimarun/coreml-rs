@@ -222,7 +222,6 @@ dependencies = [
  "sha2",
  "swift-bridge",
  "swift-bridge-build",
- "tempfile",
  "thiserror",
  "zip",
 ]
