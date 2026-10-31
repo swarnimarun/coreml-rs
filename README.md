@@ -52,6 +52,7 @@ fn main() {
 
 - [Setup Guide](docs/setup.md) — prerequisites, runtime dependencies, model formats, troubleshooting
 - [Usage Guide](docs/usage.md) — full API reference with examples
+- [Owned FFI migration](docs/ffi-safety.md) — safety-branch compatibility and performance changes
 - [Testing](docs/testing.md) — macOS checks, local fixtures, and validation limits
 - [Roadmap](docs/roadmap.md) — planned improvements and known issues
 

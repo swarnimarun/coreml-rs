@@ -51,9 +51,9 @@ impl CoreMLBatchModelWithState {
                     info.clone(),
                     false,
                 );
-                coreml_model.model.load();
+                let loaded = coreml_model.model.load();
                 let loader = CoreMLModelLoader::ModelPath(path_buf);
-                if coreml_model.model.failed() {
+                if !loaded || coreml_model.model.failed() {
                     return Err(CoreMLError::FailedToLoadBatchStatic(
                         "Failed to load model; likely not a CoreML model file",
                         Self::Unloaded(info, loader),
@@ -67,9 +67,9 @@ impl CoreMLBatchModelWithState {
                     info.clone(),
                     true,
                 );
-                coreml_model.model.load();
+                let loaded = coreml_model.model.load();
                 let loader = CoreMLModelLoader::CompiledPath(path_buf);
-                if coreml_model.model.failed() {
+                if !loaded || coreml_model.model.failed() {
                     return Err(CoreMLError::FailedToLoadBatchStatic(
                         "Failed to load model; likely not a CoreML model file",
                         Self::Unloaded(info, loader),
@@ -79,8 +79,8 @@ impl CoreMLBatchModelWithState {
             }
             CoreMLModelLoader::Buffer(vec) => {
                 let mut coreml_model = CoreMLBatchModel::load_buffer(vec.clone(), info.clone());
-                coreml_model.model.load();
-                if coreml_model.model.failed() {
+                let loaded = coreml_model.model.load();
+                if !loaded || coreml_model.model.failed() {
                     return Err(CoreMLError::FailedToLoadBatchStatic(
                         "Failed to load model; likely not a CoreML mlmodel file",
                         Self::Unloaded(info, CoreMLModelLoader::Buffer(vec)),
@@ -101,7 +101,12 @@ impl CoreMLBatchModelWithState {
                     }) {
                     Ok(vec) => {
                         let mut coreml_model = CoreMLBatchModel::load_buffer(vec, info.clone());
-                        coreml_model.model.load();
+                        if !coreml_model.model.load() || coreml_model.model.failed() {
+                            return Err(CoreMLError::FailedToLoadBatchStatic(
+                                "Failed to load model from cached buffer",
+                                Self::Unloaded(info, CoreMLModelLoader::BufferToDisk(u)),
+                            ));
+                        }
                         let loader = CoreMLModelLoader::BufferToDisk(u);
                         Ok(Self::Loaded(coreml_model, info, loader))
                     }
@@ -222,6 +227,8 @@ pub struct CoreMLBatchModel {
     outputs: HashMap<String, (&'static str, Vec<usize>)>,
 }
 
+// Moving this wrapper transfers exclusive ownership of its private Swift model.
+// This is not Sync: callers must serialize access to a shared model.
 unsafe impl Send for CoreMLBatchModel {}
 
 impl std::fmt::Debug for BatchModel {
@@ -240,18 +247,11 @@ impl CoreMLBatchModel {
         coreml_model
     }
 
-    pub fn load_buffer(mut buf: Vec<u8>, info: CoreMLModelInfo) -> Self {
-        let coreml_model = Self {
-            model: modelWithAssetsBatch(
-                buf.as_mut_ptr(),
-                buf.len() as isize,
-                info.opts.compute_platform,
-            ),
-            // save_path: None,
+    pub fn load_buffer(buf: Vec<u8>, info: CoreMLModelInfo) -> Self {
+        Self {
+            model: modelWithAssetsBatch(buf, info.opts.compute_platform),
             outputs: Default::default(),
-        };
-        std::mem::forget(buf);
-        coreml_model
+        }
     }
 
     pub fn add_input(
@@ -276,28 +276,19 @@ impl CoreMLBatchModel {
                 "expected shape {arr:?} found {shape:?}"
             )));
         }
-        match input {
-            MLArray::Float32Array(array_base) => {
-                let (mut data, offset) = array_base.into_raw_vec_and_offset();
-                assert!(
-                    matches!(offset, Some(0) | None),
-                    "array base offset is not zero; bad aligned input"
-                );
-                if !self
-                    .model
-                    .bindInputF32(shape, name, data.as_mut_ptr(), data.capacity(), idx)
-                {
-                    return Err(CoreMLError::UnknownErrorStatic(
-                        "failed to bind input to model",
-                    ));
-                }
-                std::mem::forget(data);
+        // Iterate in logical row-major order rather than exposing ndarray's raw
+        // storage, which may have a nonzero offset or nonstandard strides.
+        let bound = match input {
+            MLArray::Float32Array(array) => {
+                let data = array.iter().copied().collect();
+                self.model.bindInputF32(shape, name, data, idx)
             }
-            _ => {
-                return Err(CoreMLError::UnknownErrorStatic(
-                    "failed to bind input to model",
-                ));
-            }
+            _ => false,
+        };
+        if !bound {
+            return Err(CoreMLError::UnknownErrorStatic(
+                "failed to bind input to model",
+            ));
         }
         Ok(())
     }

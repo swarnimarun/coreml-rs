@@ -66,71 +66,113 @@ pub fn mean_absolute_error<
     sum / count as f64
 }
 
-pub trait MLType {
-    const TY: usize;
+mod sealed {
+    pub trait Sealed {}
 }
 
-impl MLType for f32 {
-    const TY: usize = 0;
+/// An element type supported by `MLArray`.
+///
+/// This trait is sealed so downstream types cannot claim another type's layout.
+pub trait MLType: sealed::Sealed + Sized {
+    const TY: usize;
+    fn into_ml_array(value: Array<Self, Dim<IxDynImpl>>) -> MLArray;
+    fn try_from_ml_array(value: MLArray) -> Result<Array<Self, Dim<IxDynImpl>>, MLArray>;
 }
-impl MLType for half::f16 {
-    const TY: usize = 1;
+
+macro_rules! impl_ml_type {
+    ($ty:ty, $variant:ident, $id:expr) => {
+        impl sealed::Sealed for $ty {}
+        impl MLType for $ty {
+            const TY: usize = $id;
+            fn into_ml_array(value: Array<Self, Dim<IxDynImpl>>) -> MLArray {
+                MLArray::$variant(value)
+            }
+            fn try_from_ml_array(value: MLArray) -> Result<Array<Self, Dim<IxDynImpl>>, MLArray> {
+                match value {
+                    MLArray::$variant(array) => Ok(array),
+                    other => Err(other),
+                }
+            }
+        }
+    };
 }
-impl MLType for i32 {
-    const TY: usize = 2;
-}
-impl MLType for u16 {
-    const TY: usize = 3;
-}
-impl MLType for u8 {
-    const TY: usize = 4;
-}
-impl MLType for i16 {
-    const TY: usize = 5;
-}
-impl MLType for i8 {
-    const TY: usize = 6;
-}
-impl MLType for u32 {
-    const TY: usize = 7;
-}
-// impl MLType for i8 {
-//     const TY: usize = 8;
-// }
+
+impl_ml_type!(f32, Float32Array, 0);
+impl_ml_type!(f16, Float16Array, 1);
+impl_ml_type!(i32, Int32Array, 2);
+impl_ml_type!(u16, UInt16Array, 3);
+impl_ml_type!(u8, UInt8Array, 4);
+impl_ml_type!(i16, Int16Array, 5);
+impl_ml_type!(i8, Int8Array, 6);
+impl_ml_type!(u32, UInt32Array, 7);
 
 impl<T: MLType> From<ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>> for MLArray {
     fn from(value: ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>) -> Self {
-        unsafe {
-            match T::TY {
-                0 => MLArray::Float32Array(std::mem::transmute(value)),
-                1 => MLArray::Float16Array(std::mem::transmute(value)),
-                2 => MLArray::Int32Array(std::mem::transmute(value)),
-                3 => MLArray::UInt16Array(std::mem::transmute(value)),
-                4 => MLArray::UInt8Array(std::mem::transmute(value)),
-                5 => MLArray::Int16Array(std::mem::transmute(value)),
-                6 => MLArray::Int8Array(std::mem::transmute(value)),
-                7 => MLArray::UInt32Array(std::mem::transmute(value)),
-                _ => panic!("not supported"),
-            }
-        }
+        T::into_ml_array(value)
     }
 }
 
 impl MLArray {
+    /// Extract the stored tensor without reinterpreting its element type.
+    ///
+    /// # Panics
+    /// Panics if `T` does not match the stored variant. Use `try_extract_to_tensor`
+    /// to recover the original array on a type mismatch.
     pub fn extract_to_tensor<T: MLType>(self) -> Array<T, Dim<IxDynImpl>> {
-        unsafe {
-            match self {
-                MLArray::Float32Array(fm) => std::mem::transmute(fm),
-                MLArray::Float16Array(fm) => std::mem::transmute(fm),
+        self.try_extract_to_tensor()
+            .expect("requested tensor type does not match MLArray variant")
+    }
 
-                MLArray::Int32Array(im) => std::mem::transmute(im),
-                MLArray::Int16Array(im) => std::mem::transmute(im),
-                MLArray::Int8Array(im) => std::mem::transmute(im),
+    pub fn try_extract_to_tensor<T: MLType>(self) -> Result<Array<T, Dim<IxDynImpl>>, Self> {
+        T::try_from_ml_array(self)
+    }
+}
 
-                MLArray::UInt32Array(um) => std::mem::transmute(um),
-                MLArray::UInt16Array(um) => std::mem::transmute(um),
-                MLArray::UInt8Array(um) => std::mem::transmute(um),
-            }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_element_type_round_trips() {
+        macro_rules! check {
+            ($ty:ty, $value:expr) => {{
+                let array = ndarray::Array::from_elem(vec![2, 3], $value);
+                let expected = array.clone();
+                let wrapped = MLArray::from(array);
+                assert_eq!(wrapped.extract_to_tensor::<$ty>(), expected);
+            }};
         }
+        check!(f32, 3.5f32);
+        check!(f16, f16::from_f32(1.5));
+        check!(i32, -3i32);
+        check!(u16, 3u16);
+        check!(u8, 3u8);
+        check!(i16, -3i16);
+        check!(i8, -3i8);
+        check!(u32, 3u32);
+    }
+
+    #[test]
+    fn mismatch_preserves_original_tensor() {
+        let original = ndarray::arr1(&[1.0f32, 2.0]).into_dyn();
+        let recovered = MLArray::from(original.clone())
+            .try_extract_to_tensor::<u8>()
+            .unwrap_err();
+        assert_eq!(recovered.extract_to_tensor::<f32>(), original);
+    }
+
+    #[test]
+    #[should_panic(expected = "requested tensor type does not match")]
+    fn mismatched_infallible_extraction_panics() {
+        MLArray::from(ndarray::arr1(&[1.0f32]).into_dyn()).extract_to_tensor::<u8>();
+    }
+
+    #[test]
+    fn conversion_preserves_nonstandard_layout() {
+        let original = ndarray::arr2(&[[1i32, 2, 3], [4, 5, 6]])
+            .reversed_axes()
+            .into_dyn();
+        let expected = original.clone();
+        assert_eq!(MLArray::from(original).extract_to_tensor::<i32>(), expected);
     }
 }

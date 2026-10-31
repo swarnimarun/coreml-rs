@@ -1,9 +1,8 @@
 use std::{
-    cell::UnsafeCell,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard,
     },
     thread,
     time::{Duration, Instant},
@@ -154,7 +153,7 @@ fn stress_predict(
                         .fetch_add(duration_ns(input_start.elapsed()), Ordering::Relaxed);
 
                     let bind_start = Instant::now();
-                    let model = stress_model.model.get();
+                    let mut model = stress_model.model.get();
                     if let Err(err) = model.add_input(stress_model.input_name.as_str(), input) {
                         eprintln!("failed to add input for {}: {err}", stress_model.name);
                         failures.fetch_add(1, Ordering::Relaxed);
@@ -352,25 +351,21 @@ impl StressTimings {
     }
 }
 
+// Serialize each model's bind/predict pair. Different models may still run in
+// parallel, but no worker can obtain overlapping mutable references to a model.
 struct SharedModel {
-    model: UnsafeCell<CoreMLModelWithState>,
+    model: Mutex<CoreMLModelWithState>,
 }
-
-unsafe impl Send for SharedModel {}
-unsafe impl Sync for SharedModel {}
 
 impl SharedModel {
     fn new(model: CoreMLModelWithState) -> Self {
         Self {
-            model: UnsafeCell::new(model),
+            model: Mutex::new(model),
         }
     }
 
-    fn get(&self) -> &mut CoreMLModelWithState {
-        // This ignored stress test intentionally shares one loaded model across
-        // threads without an external lock to reproduce the production access
-        // pattern that relies on lower-level synchronization.
-        unsafe { &mut *self.model.get() }
+    fn get(&self) -> MutexGuard<'_, CoreMLModelWithState> {
+        self.model.lock().expect("stress model mutex poisoned")
     }
 }
 

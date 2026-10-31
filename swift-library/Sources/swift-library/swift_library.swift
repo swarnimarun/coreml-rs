@@ -1,5 +1,28 @@
 import CoreML
 
+// Allocate Core ML-owned storage. No Rust allocation is retained or freed by Swift.
+private func copiedMultiArray(
+	shape: [NSNumber], values: [NSNumber], dataType: MLMultiArrayDataType
+) throws -> MLMultiArray {
+	guard !shape.isEmpty else { throw RuntimeError("empty tensor shape") }
+	var count = 1
+	for dimension in shape {
+		guard dimension.int64Value > 0, dimension.uint64Value <= UInt64(Int.max) else {
+			throw RuntimeError("invalid tensor dimension")
+		}
+		let product = count.multipliedReportingOverflow(by: dimension.intValue)
+		guard !product.overflow else { throw RuntimeError("tensor shape overflow") }
+		count = product.partialValue
+	}
+	guard count == values.count else { throw RuntimeError("tensor length does not match shape") }
+	let array = try MLMultiArray(shape: shape, dataType: dataType)
+	for (index, value) in values.enumerated() {
+		array[index] = value
+	}
+	return array
+}
+
+
 class BatchOutput {
 	var batchProvider: MLBatchProvider? = nil
 	var error: String? = nil
@@ -38,10 +61,40 @@ class BatchModelInput {
 	}
 }
 
+// Only the detached task writes the result. The semaphore publishes it to the
+// calling thread, which does not read it until completion. This operation never
+// shares a Model or BatchModel with the task.
+private final class AssetLoadOperation: @unchecked Sendable {
+	let asset: MLModelAsset
+	let configuration: MLModelConfiguration
+	private var result: MLModel? = nil
+
+	init(asset: MLModelAsset, configuration: MLModelConfiguration) {
+		self.asset = asset
+		self.configuration = configuration
+	}
+
+	func run() -> MLModel? {
+		let completed = DispatchSemaphore(value: 0)
+		Task.detached { [self] in
+			defer { completed.signal() }
+			do {
+				result = try await MLModel.load(asset: asset, configuration: configuration)
+			} catch {
+				result = nil
+			}
+		}
+		completed.wait()
+		return result
+	}
+}
+
 class BatchModel: @unchecked Sendable {
 	var compiledPath: URL? = nil
 	var model: MLModel? = nil
 	var modelCompiledAsset: MLModelAsset? = nil
+	// Retain the specification for the full asset/model lifetime.
+	var specificationData: Data? = nil
 	var inputs: [BatchModelInput] = []
 	var computeUnits: MLComputeUnits = .cpuAndNeuralEngine
 	var failedToLoad: Bool
@@ -66,15 +119,9 @@ class BatchModel: @unchecked Sendable {
 		config.setValue(1, forKey: "experimentalMLE5EngineUsage")
 		do {
 			if self.compiledPath == nil {
-				let semaphore = DispatchSemaphore(value: 0)
-				Task { [weak self] in
-					guard let self else { return }
-					let asset = self.modelCompiledAsset!
-					let res = try await MLModel.load(asset: asset, configuration: config)
-					self.model = res
-					semaphore.signal()
-				}
-				semaphore.wait()
+				guard let asset = self.modelCompiledAsset else { return false }
+				self.model = AssetLoadOperation(asset: asset, configuration: config).run()
+				return self.model != nil
 			} else {
 				let loadedModel = try MLModel(contentsOf: self.compiledPath!, configuration: config)
 				self.model = loadedModel
@@ -92,35 +139,19 @@ class BatchModel: @unchecked Sendable {
 	}
 
 	func bindInputF32(
-		shape: RustVec<UInt>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
-		len: UInt, idx: Int
+		shape: RustVec<UInt>, featureName: RustString, data: RustVec<Float32>, idx: Int
 	) -> Bool {
+		// Only existing entries or the next entry may be bound; never index a gap.
+		guard idx >= 0, idx <= self.inputs.count else { return false }
 		do {
-			var arr: [NSNumber] = []
-			var stride: [NSNumber] = []
-			var m: UInt = 1
-			for i in shape.reversed() {
-				stride.append(NSNumber(value: m))
-				m = i * m
-			}
-			stride.reverse()
-			for s in shape {
-				arr.append(NSNumber(value: s))
-			}
-			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) in
-				rust_vec_free_f32(ptr.assumingMemoryBound(to: Float32.self), len)
-			}
-			let array = try MLMultiArray.init(
-				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
-				strides: stride, deallocator: deallocMultiArrayRust)
-			let value = MLFeatureValue(multiArray: array)
-			if self.inputs.count <= idx {
-				self.inputs.append(BatchModelInput.init())
-			}
-			self.inputs[idx].dict[featureName.toString()] = value
+			let array = try copiedMultiArray(
+				shape: shape.map { NSNumber(value: $0) },
+				values: data.map { NSNumber(value: $0) }, dataType: .float32)
+			if idx == self.inputs.count { self.inputs.append(BatchModelInput()) }
+			self.inputs[idx].dict[featureName.toString()] = MLFeatureValue(multiArray: array)
 			return true
 		} catch {
-			print("Unexpected input error; \(error)")
+			print("Unexpected input error: \(error)")
 			return false
 		}
 	}
@@ -250,66 +281,46 @@ class ModelOutput {
 		}
 		return ret
 	}
-	func outputF32(name: RustString) -> RustVec<Float32> {
-		if hasFailedToLoad() { return RustVec.init() }
-		let output = self.output!
-		if self.cpy {
-			let out = (output[name.toString()]! as? MLFeatureValue)!.multiArrayValue!
-			let l = out.count
-			var v = RustVec<Float32>()
-			out.withUnsafeMutableBytes { ptr, strides in
-				let p = ptr.baseAddress!.assumingMemoryBound(to: Float32.self)
-				v = rust_vec_from_ptr_f32_cpy(p, UInt(l))
-			}
-			return v
-		} else {
-			let out = (output[name.toString()]! as? MLMultiArray)!
-			let l = out.count
-			var v = RustVec<Float32>()
-			out.withUnsafeMutableBytes { ptr, strides in
-				let p = ptr.baseAddress!.assumingMemoryBound(to: Float32.self)
-				v = rust_vec_from_ptr_f32(p, UInt(l))
-			}
-			return v
-		}
+	private func outputArray(name: String) -> MLMultiArray? {
+		guard !hasFailedToLoad(), let value = self.output?[name] else { return nil }
+		if let feature = value as? MLFeatureValue { return feature.multiArrayValue }
+		return value as? MLMultiArray
+	}
 
+	func outputF32(name: RustString) -> RustVec<Float32> {
+		let result = RustVec<Float32>()
+		guard let out = outputArray(name: name.toString()), out.dataType == .float32 else {
+			return result
+		}
+		for index in 0..<out.count {
+			result.push(value: out[index].floatValue)
+		}
+		return result
 	}
 	func outputI32(name: RustString) -> RustVec<Int32> {
-		if hasFailedToLoad() { return RustVec.init() }
-		let output = self.output!
-		let out = (output[name.toString()]! as? MLMultiArray)!
-		let l = out.count
-		var v = RustVec<Int32>()
-		out.withUnsafeMutableBytes { ptr, strides in
-			let p = ptr.baseAddress!.assumingMemoryBound(to: Int32.self)
-			if self.cpy {
-				v = rust_vec_from_ptr_i32_cpy(p, UInt(l))
-			} else {
-				v = rust_vec_from_ptr_i32(p, UInt(l))
-			}
+		let result = RustVec<Int32>()
+		guard let out = outputArray(name: name.toString()), out.dataType == .int32 else {
+			return result
 		}
-		return v
+		for index in 0..<out.count {
+			result.push(value: out[index].int32Value)
+		}
+		return result
 	}
 	func outputU16(name: RustString) -> RustVec<UInt16> {
-		if hasFailedToLoad() { return RustVec.init() }
-		let output = self.output!
-		let out = (output[name.toString()]! as? MLMultiArray)!
-		let l = out.count
-		var v = RustVec<UInt16>()
-		out.withUnsafeMutableBytes { ptr, strides in
-			let p = ptr.baseAddress!.assumingMemoryBound(to: UInt16.self)
-			if self.cpy {
-				v = rust_vec_from_ptr_u16_cpy(p, UInt(l))
-			} else {
-				v = rust_vec_from_ptr_u16(p, UInt(l))
-			}
+		let result = RustVec<UInt16>()
+		guard let out = outputArray(name: name.toString()), out.dataType == .float16 else {
+			return result
 		}
-		return v
+		for index in 0..<out.count {
+			result.push(value: Float16(out[index].floatValue).bitPattern)
+		}
+		return result
 	}
 }
 
 func initWithCompiledAsset(
-	ptr: UnsafeMutablePointer<UInt8>, len: Int, compute: ComputePlatform
+	bytes: RustVec<UInt8>, compute: ComputePlatform
 ) -> Model {
 	var computeUnits: MLComputeUnits
 	switch compute {
@@ -323,13 +334,11 @@ func initWithCompiledAsset(
 		computeUnits = .cpuAndGPU
 		break
 	}
-	let data = Data.init(
-		bytesNoCopy: ptr, count: len,
-		deallocator: Data.Deallocator.custom { ptr, len in
-			rust_vec_free_u8(ptr.assumingMemoryBound(to: UInt8.self), UInt(len))
-		})
+	// RustVec owns its allocation; Data takes an independent copy before it drops.
+	let data = Data(Array(bytes))
 	do {
 		let m = Model.init(failedToLoad: false)
+		m.specificationData = data
 		m.modelCompiledAsset = try MLModelAsset.init(specification: data)
 		m.computeUnits = computeUnits
 		return m
@@ -340,7 +349,7 @@ func initWithCompiledAsset(
 }
 
 func initWithCompiledAssetBatch(
-	ptr: UnsafeMutablePointer<UInt8>, len: Int, compute: ComputePlatform
+	bytes: RustVec<UInt8>, compute: ComputePlatform
 ) -> BatchModel {
 	var computeUnits: MLComputeUnits
 	switch compute {
@@ -354,13 +363,11 @@ func initWithCompiledAssetBatch(
 		computeUnits = .cpuAndGPU
 		break
 	}
-	let data = Data.init(
-		bytesNoCopy: ptr, count: len,
-		deallocator: Data.Deallocator.custom { ptr, len in
-			rust_vec_free_u8(ptr.assumingMemoryBound(to: UInt8.self), UInt(len))
-		})
+	// RustVec owns its allocation; Data takes an independent copy before it drops.
+	let data = Data(Array(bytes))
 	do {
 		let m = BatchModel.init(failedToLoad: false)
+		m.specificationData = data
 		m.modelCompiledAsset = try MLModelAsset.init(specification: data)
 		m.computeUnits = computeUnits
 		return m
@@ -470,6 +477,8 @@ struct RuntimeError: LocalizedError {
 class Model: @unchecked Sendable {
 	var compiledPath: URL? = nil
 	var modelCompiledAsset: MLModelAsset? = nil
+	// Retain the specification for the full asset/model lifetime.
+	var specificationData: Data? = nil
 	var model: MLModel? = nil
 	var dict: [String: Any] = [:]
 	var outputs: [String: Any] = [:]
@@ -502,15 +511,9 @@ class Model: @unchecked Sendable {
 		}
 		do {
 			if self.compiledPath == nil {
-				let semaphore = DispatchSemaphore(value: 0)
-				Task { [weak self] in
-					guard let self else { return }
-					let asset = self.modelCompiledAsset!
-					let res = try await MLModel.load(asset: asset, configuration: config)
-					self.model = res
-					semaphore.signal()
-				}
-				semaphore.wait()
+				guard let asset = self.modelCompiledAsset else { return false }
+				self.model = AssetLoadOperation(asset: asset, configuration: config).run()
+				return self.model != nil
 			} else {
 				let loadedModel = try MLModel(contentsOf: self.compiledPath!, configuration: config)
 				self.model = loadedModel
@@ -532,32 +535,17 @@ class Model: @unchecked Sendable {
 	}
 
 	func bindOutputF32(
-		shape: RustVec<Int32>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
-		len: UInt
+		shape: RustVec<Int32>, featureName: RustString, data: RustVec<Float32>
 	) -> Bool {
 		if hasFailedToLoad() { return false }
 		do {
-			var arr: [NSNumber] = []
-			var stride: [NSNumber] = []
-			var m: Int32 = 1
-			for i in shape.reversed() {
-				stride.append(NSNumber(value: m))
-				m = i * m
-			}
-			stride.reverse()
-			for s in shape {
-				arr.append(NSNumber(value: s))
-			}
-			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) in
-				()
-			}
-			let array = try MLMultiArray.init(
-				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
-				strides: stride, deallocator: deallocMultiArrayRust)
+			let array = try copiedMultiArray(
+				shape: shape.map { NSNumber(value: $0) },
+				values: data.map { NSNumber(value: $0) }, dataType: .float32)
 			self.outputs[featureName.toString()] = array
 			return true
 		} catch {
-			print("Unexpected output error: \(error)")
+			print("Unexpected tensor binding error: \(error)")
 			return false
 		}
 	}
@@ -570,7 +558,10 @@ class Model: @unchecked Sendable {
 		do {
 			let input = try MLDictionaryFeatureProvider.init(dictionary: self.dict)
 			let opts = MLPredictionOptions.init()
-			let prediction = try self.model!.prediction(from: input, options: opts)
+			guard let model = self.model else {
+				return ModelOutput(output: nil, error: RuntimeError("model is not loaded"))
+			}
+			let prediction = try model.prediction(from: input, options: opts)
 			let outputs = (prediction as? MLDictionaryFeatureProvider)?.dictionary
 			self.outputs = [:]
 			self.dict = [:]
@@ -582,93 +573,46 @@ class Model: @unchecked Sendable {
 	}
 
 	func bindInputF32(
-		shape: RustVec<UInt>, featureName: RustString, data: UnsafeMutablePointer<Float32>,
-		len: UInt
+		shape: RustVec<UInt>, featureName: RustString, data: RustVec<Float32>
 	) -> Bool {
 		do {
-			var arr: [NSNumber] = []
-			var stride: [NSNumber] = []
-			var m: UInt = 1
-			for i in shape.reversed() {
-				stride.append(NSNumber(value: m))
-				m = i * m
-			}
-			stride.reverse()
-			for s in shape {
-				arr.append(NSNumber(value: s))
-			}
-			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) in
-				rust_vec_free_f32(ptr.assumingMemoryBound(to: Float32.self), len)
-			}
-			let array = try MLMultiArray.init(
-				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
-				strides: stride, deallocator: deallocMultiArrayRust)
-			let value = MLFeatureValue(multiArray: array)
-			self.dict[featureName.toString()] = value
+			let array = try copiedMultiArray(
+				shape: shape.map { NSNumber(value: $0) },
+				values: data.map { NSNumber(value: $0) }, dataType: .float32)
+			self.dict[featureName.toString()] = MLFeatureValue(multiArray: array)
 			return true
 		} catch {
-			print("Unexpected input error; \(error)")
+			print("Unexpected tensor binding error: \(error)")
 			return false
 		}
 	}
 
 	func bindInputI32(
-		shape: RustVec<UInt>, featureName: RustString, data: UnsafeMutablePointer<Int32>, len: UInt
+		shape: RustVec<UInt>, featureName: RustString, data: RustVec<Int32>
 	) -> Bool {
 		do {
-			var arr: [NSNumber] = []
-			var stride: [NSNumber] = []
-			var m: UInt = 1
-			for i in shape.reversed() {
-				stride.append(NSNumber(value: m))
-				m = i * m
-			}
-			stride.reverse()
-			for s in shape {
-				arr.append(NSNumber(value: s))
-			}
-			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) -> Void in
-				rust_vec_free_i32(ptr.assumingMemoryBound(to: Int32.self), len)
-			}
-			let array = try MLMultiArray.init(
-				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float32,
-				strides: stride, deallocator: deallocMultiArrayRust)
-			let value = MLFeatureValue(multiArray: array)
-			self.dict[featureName.toString()] = value
+			let array = try copiedMultiArray(
+				shape: shape.map { NSNumber(value: $0) },
+				values: data.map { NSNumber(value: $0) }, dataType: .int32)
+			self.dict[featureName.toString()] = MLFeatureValue(multiArray: array)
 			return true
 		} catch {
-			print("Unexpected error; \(error)")
+			print("Unexpected tensor binding error: \(error)")
 			return false
 		}
 	}
 
 	func bindInputU16(
-		shape: RustVec<UInt>, featureName: RustString, data: UnsafeMutablePointer<UInt16>,
-		len: UInt
+		shape: RustVec<UInt>, featureName: RustString, data: RustVec<UInt16>
 	) -> Bool {
 		do {
-			var arr: [NSNumber] = []
-			var stride: [NSNumber] = []
-			var m: UInt = 1
-			for i in shape.reversed() {
-				stride.append(NSNumber(value: m))
-				m = i * m
-			}
-			stride.reverse()
-			for s in shape {
-				arr.append(NSNumber(value: s))
-			}
-			let deallocMultiArrayRust = { (_ ptr: UnsafeMutableRawPointer) -> Void in
-				rust_vec_free_u16(ptr.assumingMemoryBound(to: UInt16.self), len)
-			}
-			let array = try MLMultiArray.init(
-				dataPointer: data, shape: arr, dataType: MLMultiArrayDataType.float16,
-				strides: stride, deallocator: deallocMultiArrayRust)
-			let value = MLFeatureValue(multiArray: array)
-			self.dict[featureName.toString()] = value
+			let array = try copiedMultiArray(
+				shape: shape.map { NSNumber(value: $0) },
+				values: data.map { NSNumber(value: Double(Float16(bitPattern: $0))) }, dataType: .float16)
+			self.dict[featureName.toString()] = MLFeatureValue(multiArray: array)
 			return true
 		} catch {
-			print("Unexpected error; \(error)")
+			print("Unexpected tensor binding error: \(error)")
 			return false
 		}
 	}

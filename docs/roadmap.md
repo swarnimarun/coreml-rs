@@ -11,12 +11,9 @@ Concrete, actionable improvements. Roughly ordered by impact.
 - **Proposal**: Introduce a parametric `CoreMLEngine<S>` enum generic over a `ModelSession` trait with `load()`, `unload()`, `add_input()`, `predict()` methods.
 - **Files**: `src/mlmodel.rs:90-318`, `src/mlbatchmodel.rs:19-216`, `src/mlmodel.rs:78-87`
 
-### 2. Fix `bindInputI32` creating the wrong MLMultiArray dtype (Swift bug)
+### 2. Validate i32 input support across models
 
-In `swift_library.swift:630-635`, `bindInputI32` creates an `MLMultiArray` with `dataType: MLMultiArrayDataType.float32` instead of `.int32`. This means i32 inputs are silently cast to float, producing wrong results.
-
-- **Fix**: Change `MLMultiArrayDataType.float32` to `.int32` on line 634.
-- **File**: `swift-library/Sources/swift-library/swift_library.swift:630-635`
+The Swift binder now constructs `.int32` arrays, rather than treating i32 bits as float32. Broader model-specific i32 compatibility still needs coverage.
 
 ### 3. Complete dtype support in inference pipeline
 
@@ -26,7 +23,7 @@ Only f32 inputs/outputs are fully wired. The current status:
 |-------|:---:|:---:|:---:|:---:|
 | f32   | ✓   | ✓   | ✓   | ✓   |
 | f16   | ✓   | ✗   | Partial (u16 reinterpret) | ✗   |
-| i32   | ✓ (buggy) | ✗ | ✗ | ✗ |
+| i32   | ✓ | ✗ | ✗ | ✗ |
 | i16   | ✗   | ✗   | ✗   | ✗   |
 | i8    | ✗   | ✗   | ✗   | ✗   |
 | u8    | ✗   | ✗   | ✗   | ✗   |
@@ -61,22 +58,13 @@ In `BatchModel.load()` (`swift-library/Sources/swift-library/swift_library.swift
 - **Fix**: Add `self.disableExperimentalMLE` check to `BatchModel.load()`.
 - **Files**: `swift-library/Sources/swift-library/swift_library.swift:66`, compare with `swift_library.swift:500-502`
 
-### 7. Safe MLArray conversions
+### 7. Validate the owned FFI migration
 
-`MLArray::extract_to_tensor()` and the `From` impls use `std::mem::transmute` between different `ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>` types. The array layout and allocation invariants are not guaranteed across element types; `extract_to_tensor<T>()` also allows a caller to request a type that does not match the stored variant.
-
-- **Proposal**: Validate the requested element type and use typed conversions, or a checked buffer conversion followed by `Array::from_shape_vec`. `ptr::read` is unsafe and `ManuallyDrop` alone does not establish layout, alignment, or allocation safety.
-- **File**: `src/mlarray.rs:101-136`
+The safety-fix branch replaces array transmutation with sealed typed conversions and owned-vector FFI transfers. See [Owned FFI migration](ffi-safety.md) for breaking low-level API changes and copy/performance tradeoffs. Benchmark and test representative models before adoption.
 
 ### 8. Proper concurrency safety
 
-Models use `unsafe impl Send` with no documentation of invariants. The retry stress test (`tests/retry.rs:355-374`) shares a model across threads via `UnsafeCell<CoreMLModelWithState>` without locks. With multiple workers this can create overlapping mutable references and data races. Swift's `@unchecked Sendable` does not make the Rust aliasing safe. Do not use this stress harness as concurrency-safety evidence until access is serialized or each worker owns its own model.
-
-- **Proposal**: Either:
-  - Document that `CoreMLModelWithState` is `Send` but not `Sync`, and that callers must serialize access, or
-  - Add `Arc<Mutex<>>` wrapper as a convenience type.
-  - Investigate whether `MLModel.prediction(from:options:)` is thread-safe, and if so, make it `Sync`.
-- **Files**: `src/mlmodel.rs:406`, `src/mlbatchmodel.rs:225`, `tests/retry.rs:355-374`
+The retry harness now serializes each model's bind/predict pair with a mutex. This removes the harness's unchecked mutable aliasing; it does not establish thread safety of the underlying Core ML APIs. Review and document the remaining `unsafe impl Send` invariants in `src/mlmodel.rs` and `src/mlbatchmodel.rs` before promising broader concurrent use.
 
 ## Lower Priority
 
@@ -97,10 +85,10 @@ Multiple error paths return `UnknownErrorStatic("failed to bind input to model")
 
 ### 11. CI/CD pipeline
 
-A [macOS workflow](../.github/workflows/ci.yml) builds all targets, checks formatting and Clippy, and runs the fixture-free default tests. The two fixture-backed reload tests and the retry stress test are explicitly ignored by default. See [Testing](testing.md) for the macOS checks, required local fixtures, and stress-test safety limitation. A default test run does not validate successful model inference.
+A [macOS workflow](../.github/workflows/ci.yml) builds all targets, checks formatting and Clippy, and runs the fixture-free default tests. The two fixture-backed reload tests and the retry stress test are explicitly ignored by default. See [Testing](testing.md) for the macOS checks, required local fixtures, and stress-test coverage limits. Default tests now generate a tiny scalar ReLU model to validate single/batch CPU inference and reload; they do not establish arbitrary-model or GPU/ANE coverage.
 
-- Add a small redistributable test `.mlmodel` that exercises the load/predict/unload cycle in CI
-- Add process-level timeouts to model-loading regression tests
+- Expand the in-memory synthetic model tests to cover more dtypes, shapes, and cache paths
+- Retain process-level timeouts on model-loading regression tests
 
 ### 12. Support non-MLMultiArray I/O
 

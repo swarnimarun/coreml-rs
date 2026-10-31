@@ -2,7 +2,7 @@ name: macOS validation
 
 on:
   push:
-    branches: [main, chore/personal-maintenance-2026-10-31]
+    branches: [main, chore/personal-maintenance-2026-10-31, fix/personal-ffi-ownership-2026-10-31]
   pull_request:
 
 permissions:

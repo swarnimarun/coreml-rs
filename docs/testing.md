@@ -18,7 +18,7 @@ export DYLD_LIBRARY_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain
 cargo test --locked
 ```
 
-These are validation commands, not a claim that the current branch has passed them. The [macOS workflow](../.github/workflows/ci.yml) runs these checks on a standard `macos-15` GitHub-hosted runner with read-only repository permissions, no model downloads, and a three-minute timeout on the test step. The two local reload tests and the unsafe stress harness remain ignored; a green workflow is not inference or concurrency coverage. The default integration tests include `load_empty`, which checks rejection of an empty model buffer. They do not establish successful inference, reload behavior, or thread safety. Ignored tests are still compiled by Cargo.
+These are validation commands, not a claim that the current branch has passed them. The [macOS workflow](../.github/workflows/ci.yml) runs these checks on a standard `macos-15` GitHub-hosted runner with read-only repository permissions, no model downloads, and a three-minute timeout on the test step. The two local-fixture reload tests and the opt-in stress harness remain ignored. The default suite includes `load_empty` plus `ffi_owned`, which independently generates a tiny scalar ReLU model in memory. Its subprocess-isolated tests cover malformed buffers, single/batch CPU prediction and reload, and rejected tensor shapes/indices. Each subprocess has a 30-second deadline. This is focused synthetic coverage, not arbitrary-model, GPU/ANE, performance, or thread-safety validation. Ignored tests are still compiled by Cargo.
 
 ## Opt-in reload tests
 
@@ -38,12 +38,12 @@ cargo test --locked --test load reload_from_buf -- --ignored --exact
 
 The archive test uses a shared hash-based directory under `/tmp/coreml-aftershoot/` and removes its extracted package. Avoid concurrent runs of that test. Neither test checks prediction output values.
 
-## Retry stress test: not a safe concurrency test yet
+## Retry stress test
 
 `tests/retry.rs` is ignored by default and looks for `target/saliency.mlpackage` and `target/vitae.mlpackage`. It returns early if no model is found, so a passing result without fixtures is not runtime coverage.
 
-The current harness shares a model through `UnsafeCell` with unchecked `Send`/`Sync` implementations. Multiple workers can create overlapping mutable references. Do not run the entire ignored suite as a validation shortcut, or use this harness to claim thread safety. First serialize the input-binding/prediction pair or give each worker its own model. See the [concurrency roadmap item](roadmap.md#8-proper-concurrency-safety).
+The harness now locks each model for the full input-binding/prediction pair. Workers cannot alias mutable references to one shared model; different models may still run concurrently. This is not evidence that Core ML allows unsynchronized access to the same model. Do not run the entire ignored suite as a validation shortcut: provision authorized fixtures and select the intended test explicitly.
 
 ## Remaining release checks
 
-Before treating the library as release-ready, add a small redistributable model and verify load, predict, unload, and reload on macOS. Cover failure paths with process-level timeouts so a Swift loading deadlock cannot hang the test suite indefinitely. Review dtype conversion and Rust/Swift buffer-ownership safety separately; these are not fixed by making local fixture tests opt-in.
+Before treating the library as release-ready, validate representative authorized models, all supported input/output dtypes, GPU/ANE behavior, and performance. The synthetic model does not replace these checks. Review the [owned FFI compatibility changes](ffi-safety.md), remaining `Send` invariants, and cached-on-disk model paths separately.

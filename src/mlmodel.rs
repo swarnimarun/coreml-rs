@@ -150,8 +150,8 @@ impl CoreMLModelWithState {
             }
             CoreMLModelLoader::Buffer(vec) => {
                 let mut coreml_model = CoreMLModel::load_buffer(vec.clone(), info.clone());
-                coreml_model.model.load();
-                if coreml_model.model.failed() {
+                let loaded = coreml_model.model.load();
+                if !loaded || coreml_model.model.failed() {
                     return Err(CoreMLError::FailedToLoadStatic(
                         "Failed to load model; likely not a CoreML mlmodel file",
                         Self::Unloaded(info, CoreMLModelLoader::Buffer(vec)),
@@ -172,7 +172,12 @@ impl CoreMLModelWithState {
                     }) {
                     Ok(vec) => {
                         let mut coreml_model = CoreMLModel::load_buffer(vec, info.clone());
-                        coreml_model.model.load();
+                        if !coreml_model.model.load() || coreml_model.model.failed() {
+                            return Err(CoreMLError::FailedToLoadStatic(
+                                "Failed to load model from cached buffer",
+                                Self::Unloaded(info, CoreMLModelLoader::BufferToDisk(u)),
+                            ));
+                        }
                         let loader = CoreMLModelLoader::BufferToDisk(u);
                         Ok(Self::Loaded(coreml_model, info, loader))
                     }
@@ -403,6 +408,8 @@ pub struct CoreMLModel {
     outputs: HashMap<String, (&'static str, Vec<usize>)>,
 }
 
+// Moving this wrapper transfers exclusive ownership of its private Swift model.
+// This is not Sync: callers must serialize access to a shared model.
 unsafe impl Send for CoreMLModel {}
 
 impl std::fmt::Debug for Model {
@@ -423,19 +430,14 @@ impl CoreMLModel {
         coreml_model
     }
 
-    pub fn load_buffer(mut buf: Vec<u8>, info: CoreMLModelInfo) -> Self {
+    pub fn load_buffer(buf: Vec<u8>, info: CoreMLModelInfo) -> Self {
         let mut coreml_model = Self {
-            model: modelWithAssets(
-                buf.as_mut_ptr(),
-                buf.len() as isize,
-                info.opts.compute_platform,
-            ),
+            model: modelWithAssets(buf, info.opts.compute_platform),
             outputs: Default::default(),
         };
         coreml_model
             .model
             .setDisableExperimentalMLE(info.opts.disable_experimental_mle);
-        std::mem::forget(buf);
         coreml_model
     }
 
@@ -460,88 +462,50 @@ impl CoreMLModel {
                 "expected shape {arr:?} found {shape:?}"
             )));
         }
-        match input {
-            MLArray::Float32Array(array_base) => {
-                let (mut data, offset) = array_base.into_raw_vec_and_offset();
-                assert!(
-                    matches!(offset, Some(0) | None),
-                    "array base offset is not zero; bad aligned input"
-                );
-                if !self
-                    .model
-                    .bindInputF32(shape, name, data.as_mut_ptr(), data.capacity())
-                {
-                    return Err(CoreMLError::UnknownErrorStatic(
-                        "failed to bind input to model",
-                    ));
-                }
-                std::mem::forget(data);
+        // Iterate in logical row-major order rather than exposing ndarray's raw
+        // storage, which may have a nonzero offset or nonstandard strides.
+        let bound = match input {
+            MLArray::Float32Array(array) => {
+                let data = array.iter().copied().collect();
+                self.model.bindInputF32(shape, name, data)
             }
-            MLArray::Float16Array(array_base) => {
-                let (mut data, offset) = array_base.into_raw_vec_and_offset();
-                assert!(
-                    matches!(offset, Some(0) | None),
-                    "array base offset is not zero; bad aligned input"
-                );
-                if !self.model.bindInputU16(
-                    shape,
-                    name,
-                    data.as_mut_ptr() as *mut u16,
-                    data.capacity(),
-                ) {
-                    return Err(CoreMLError::UnknownErrorStatic(
-                        "failed to bind input to model",
-                    ));
-                }
-                std::mem::forget(data);
+            MLArray::Float16Array(array) => {
+                let data = array.iter().map(|value| value.to_bits()).collect();
+                self.model.bindInputU16(shape, name, data)
             }
-            MLArray::Int32Array(array_base) => {
-                let (mut data, offset) = array_base.into_raw_vec_and_offset();
-                assert!(
-                    matches!(offset, Some(0) | None),
-                    "array base offset is not zero; bad aligned input"
-                );
-                if !self
-                    .model
-                    .bindInputI32(shape, name, data.as_mut_ptr(), data.capacity())
-                {
-                    return Err(CoreMLError::UnknownErrorStatic(
-                        "failed to bind input to model",
-                    ));
-                }
-                std::mem::forget(data);
+            MLArray::Int32Array(array) => {
+                let data = array.iter().copied().collect();
+                self.model.bindInputI32(shape, name, data)
             }
-            _ => {
-                return Err(CoreMLError::UnknownErrorStatic(
-                    "failed to bind input to model",
-                ));
-            } // MLArray::Int16Array(array_base) => todo!(),
-              // MLArray::Int8Array(array_base) => todo!(),
-              // MLArray::UInt32Array(array_base) => todo!(),
-              // MLArray::UInt16Array(array_base) => todo!(),
-              // MLArray::UInt8Array(array_base) => todo!(),
+            _ => false,
+        };
+        if !bound {
+            return Err(CoreMLError::UnknownErrorStatic(
+                "failed to bind input to model",
+            ));
         }
         Ok(())
     }
 
     pub fn add_output_f32(&mut self, tag: impl AsRef<str>, out: impl Into<MLArray>) -> bool {
-        let arr: MLArray = out.into();
-        let shape = arr.shape();
-        self.outputs
-            .insert(tag.as_ref().to_string(), ("f32", shape.to_vec()));
-        let shape: Vec<i32> = shape.into_iter().map(|i| *i as i32).collect();
-        let (mut data, offset) = arr.extract_to_tensor::<f32>().into_raw_vec_and_offset();
-        assert!(
-            matches!(offset, Some(0) | None),
-            "array base offset is not zero; bad aligned output buffer"
-        );
+        let MLArray::Float32Array(array) = out.into() else {
+            return false;
+        };
+        let output_shape = array.shape().to_vec();
+        let Ok(shape) = output_shape
+            .iter()
+            .copied()
+            .map(i32::try_from)
+            .collect::<Result<Vec<_>, _>>()
+        else {
+            return false;
+        };
         let name = tag.as_ref().to_string();
-        let ptr = data.as_mut_ptr();
-        let len = data.capacity();
-        if !self.model.bindOutputF32(shape, name, ptr, len) {
+        let data = array.iter().copied().collect();
+        if !self.model.bindOutputF32(shape, name.clone(), data) {
             return false;
         }
-        std::mem::forget(data);
+        self.outputs.insert(name, ("f32", output_shape));
         true
     }
 
@@ -676,27 +640,44 @@ fn feature_name_from_description(description: &str) -> Option<String> {
 }
 
 fn reinterpret_u16_to_f16(input: ndarray::ArrayD<u16>) -> ndarray::ArrayD<half::f16> {
-    let shape = input.shape().to_vec();
-    let len = input.len();
+    input.mapv(half::f16::from_bits)
+}
 
-    // Consume input and get the raw Vec<u32>
-    let (raw_vec, offset) = input.into_raw_vec_and_offset();
-    assert!(
-        matches!(offset, Some(0) | None),
-        "array base offset is not zero; bad aligned data reinterpret"
-    );
+#[cfg(test)]
+mod tests {
+    use super::reinterpret_u16_to_f16;
+    use ndarray::{arr2, s};
 
-    // SAFETY:
-    // - u32 and f32 have the same size
-    // - The underlying data is valid to reinterpret as f32
-    // - This creates a new Vec<f32> with the same bytes
-    let raw_vec_f16 = {
-        let ptr = raw_vec.as_ptr() as *mut half::f16;
-        let capacity = raw_vec.capacity();
-        std::mem::forget(raw_vec); // prevent drop of original vec
-        unsafe { Vec::from_raw_parts(ptr, len, capacity) }
-    };
+    #[test]
+    fn half_output_preserves_bits_and_shape_for_nonstandard_layout() {
+        let input = arr2(&[[0x0000u16, 0x8000], [0x3c00, 0x7e01]])
+            .reversed_axes()
+            .into_dyn();
+        let expected: Vec<_> = input.iter().copied().collect();
+        let output = reinterpret_u16_to_f16(input);
+        assert_eq!(output.shape(), &[2, 2]);
+        assert_eq!(
+            output
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
 
-    // TODO SA: we know unwrap won't cause ShapeError, but avoid unwrap regardless
-    ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&shape), raw_vec_f16).unwrap()
+    #[test]
+    fn half_output_handles_owned_array_with_offset() {
+        let input = arr2(&[[0x0000u16, 0x8000], [0x3c00, 0x4000]])
+            .slice_move(s![1.., ..])
+            .into_dyn();
+        let output = reinterpret_u16_to_f16(input);
+        assert_eq!(output.shape(), &[1, 2]);
+        assert_eq!(
+            output
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            vec![0x3c00, 0x4000]
+        );
+    }
 }
