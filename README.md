@@ -45,13 +45,14 @@ fn main() {
 
 ## Requirements
 
-- macOS with Xcode and Command Line Tools
+- macOS 13+ with Xcode, Swift 6.0+, and Command Line Tools
 - `libswift_Concurrency.dylib` must be findable at runtime — see [setup guide](docs/setup.md)
 
 ## Documentation
 
 - [Setup Guide](docs/setup.md) — prerequisites, runtime dependencies, model formats, troubleshooting
 - [Usage Guide](docs/usage.md) — full API reference with examples
+- [Testing](docs/testing.md) — macOS checks, local fixtures, and validation limits
 - [Roadmap](docs/roadmap.md) — planned improvements and known issues
 
 ## License

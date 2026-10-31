@@ -63,14 +63,14 @@ In `BatchModel.load()` (`swift-library/Sources/swift-library/swift_library.swift
 
 ### 7. Safe MLArray conversions
 
-`MLArray::extract_to_tensor()` and the `From` impls use `std::mem::transmute` between different `ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>` types. While all variants are `OwnedRepr` over the same dimension type (so layout is identical), this is still UB according to strict Rust rules because the type parameter differs.
+`MLArray::extract_to_tensor()` and the `From` impls use `std::mem::transmute` between different `ArrayBase<OwnedRepr<T>, Dim<IxDynImpl>>` types. The array layout and allocation invariants are not guaranteed across element types; `extract_to_tensor<T>()` also allows a caller to request a type that does not match the stored variant.
 
-- **Proposal**: Reimplement with safe `ptr::read`/`ManuallyDrop` or use `bytemuck` for the underlying buffer and `Array::from_shape_vec` to rebuild.
+- **Proposal**: Validate the requested element type and use typed conversions, or a checked buffer conversion followed by `Array::from_shape_vec`. `ptr::read` is unsafe and `ManuallyDrop` alone does not establish layout, alignment, or allocation safety.
 - **File**: `src/mlarray.rs:101-136`
 
 ### 8. Proper concurrency safety
 
-Models use `unsafe impl Send` with no documentation of invariants. The retry stress test (`tests/retry.rs:355-374`) shares a model across threads via `UnsafeCell<CoreMLModelWithState>` without locks. This works today because `Model` (Swift side) is `@unchecked Sendable` and prediction calls happen sequentially in practice, but it's fragile.
+Models use `unsafe impl Send` with no documentation of invariants. The retry stress test (`tests/retry.rs:355-374`) shares a model across threads via `UnsafeCell<CoreMLModelWithState>` without locks. With multiple workers this can create overlapping mutable references and data races. Swift's `@unchecked Sendable` does not make the Rust aliasing safe. Do not use this stress harness as concurrency-safety evidence until access is serialized or each worker owns its own model.
 
 - **Proposal**: Either:
   - Document that `CoreMLModelWithState` is `Send` but not `Sync`, and that callers must serialize access, or
@@ -97,7 +97,7 @@ Multiple error paths return `UnknownErrorStatic("failed to bind input to model")
 
 ### 11. CI/CD pipeline
 
-No CI configuration is present. Tests (`tests/load.rs`, `tests/retry.rs`) require local model files at `./demo/model.zip`, `./demo/model_3.mlmodel`, and `target/vitae.mlpackage`.
+No CI configuration is present. The two fixture-backed reload tests and the retry stress test are explicitly ignored by default. See [Testing](testing.md) for the macOS checks, required local fixtures, and stress-test safety limitation. A default test run does not validate successful model inference.
 
 - Add a GitHub Actions workflow that:
   - Verifies `cargo build` passes on macOS
@@ -128,6 +128,7 @@ No docstrings exist on public types or functions. `CoreMLModelWithState`, `CoreM
 - Add module-level docs in `lib.rs`, `mlmodel.rs`, `mlbatchmodel.rs`, `mlarray.rs`
 - Consider adding `#![warn(missing_docs)]` once docs exist
 
-### 15. Fix README install version
+## Completed documentation cleanup
 
-The README shows `version = "0.4"` but `Cargo.toml` declares `version = "0.5.4"`. Update the README to match.
+- The README and setup guide use the `0.5` dependency requirement, compatible with `Cargo.toml` version `0.5.4`, and point to this personal repository.
+- Fixture-dependent reload tests are opt-in and their requirements are documented. This does not replace macOS runtime validation or a redistributable test model.

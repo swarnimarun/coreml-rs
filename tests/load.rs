@@ -41,6 +41,7 @@ pub fn unzip_to_path_from_hash(buf: &[u8]) -> Option<PathBuf> {
 }
 
 #[test]
+#[ignore = "requires local demo/model.zip containing model.mlpackage; see docs/testing.md"]
 pub fn reload_from_compiled_path() {
     let model_path = "./demo/model.zip";
     let buf = std::fs::read(model_path).unwrap();
@@ -58,6 +59,7 @@ pub fn reload_from_compiled_path() {
 }
 
 #[test]
+#[ignore = "requires local demo/model_3.mlmodel; see docs/testing.md"]
 pub fn reload_from_buf() {
     let model_path = "./demo/model_3.mlmodel";
     let buf = std::fs::read(model_path).unwrap();

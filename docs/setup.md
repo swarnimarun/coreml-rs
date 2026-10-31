@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- **macOS** — Core ML is an Apple framework, available on macOS 10.13+ (tested on macOS 13+)
-- **Xcode** with Command Line Tools — the build script runs `xcode-select --print-path` and `swift build`
+- **macOS 13 or newer** — the Swift package declares macOS 13 as its deployment target. Individual models or APIs may require a newer macOS version; this is not a runtime compatibility guarantee.
+- **Xcode** with a Swift 6.0 or newer toolchain and Command Line Tools — the build script runs `xcode-select --print-path` and `swift build`
 - **Rust** stable (edition 2021)
 
 Verify your tools:
@@ -23,7 +23,7 @@ rustc --version
 
 ```toml
 [dependencies]
-coreml-rs = { version = "0.5", git = "https://github.com/aftershootco/coreml-rs" }
+coreml-rs = { version = "0.5", git = "https://github.com/swarnimarun/coreml-rs" }
 ndarray = "0.16"
 ```
 
@@ -75,7 +75,7 @@ println!("cargo:rustc-link-search=/usr/lib/swift");
 println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
 ```
 
-This is what `coreml-rs`'s own `build.rs` already does for the link step, but the runtime loader still needs to find it. Using `install_name_tool` or DYLD paths works too.
+`coreml-rs`'s own `build.rs` adds Swift library search paths for linking, but does not emit the rpath argument above. The runtime loader still needs to find the Swift libraries. Using `install_name_tool` or DYLD paths works too.
 
 **Option C: DYLD_LIBRARY_PATH** (development only)
 
