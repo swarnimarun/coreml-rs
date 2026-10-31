@@ -17,7 +17,7 @@ cargo clippy --locked --all-targets
 cargo test --locked
 ```
 
-These are validation commands, not a claim that the current branch has passed them. There is currently no CI workflow. The default integration tests include `load_empty`, which checks rejection of an empty model buffer. They do not establish successful inference, reload behavior, or thread safety. Ignored tests are still compiled by Cargo.
+These are validation commands, not a claim that the current branch has passed them. The [macOS workflow](../.github/workflows/ci.yml) runs these checks on a standard `macos-15` GitHub-hosted runner with read-only repository permissions, no model downloads, and a three-minute timeout on the test step. The two local reload tests and the unsafe stress harness remain ignored; a green workflow is not inference or concurrency coverage. The default integration tests include `load_empty`, which checks rejection of an empty model buffer. They do not establish successful inference, reload behavior, or thread safety. Ignored tests are still compiled by Cargo.
 
 ## Opt-in reload tests
 

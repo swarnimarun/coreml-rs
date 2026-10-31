@@ -1,0 +1,38 @@
+name: macOS validation
+
+on:
+  push:
+    branches: [main, chore/personal-maintenance-2026-10-31]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          rustc --version
+          cargo --version
+          swift --version
+          xcode-select --print-path
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Build all targets
+        if: ${{ !cancelled() }}
+        run: cargo build --locked --all-targets
+      - name: Clippy
+        if: ${{ !cancelled() }}
+        run: cargo clippy --locked --all-targets
+      - name: Tests without local model fixtures
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        run: cargo test --locked

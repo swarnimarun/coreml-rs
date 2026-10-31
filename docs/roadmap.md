@@ -97,13 +97,10 @@ Multiple error paths return `UnknownErrorStatic("failed to bind input to model")
 
 ### 11. CI/CD pipeline
 
-No CI configuration is present. The two fixture-backed reload tests and the retry stress test are explicitly ignored by default. See [Testing](testing.md) for the macOS checks, required local fixtures, and stress-test safety limitation. A default test run does not validate successful model inference.
+A [macOS workflow](../.github/workflows/ci.yml) builds all targets, checks formatting and Clippy, and runs the fixture-free default tests. The two fixture-backed reload tests and the retry stress test are explicitly ignored by default. See [Testing](testing.md) for the macOS checks, required local fixtures, and stress-test safety limitation. A default test run does not validate successful model inference.
 
-- Add a GitHub Actions workflow that:
-  - Verifies `cargo build` passes on macOS
-  - Runs unit tests with dummy model files (or a small test model checked into the repo)
-  - Runs `cargo clippy` and `cargo fmt --check`
-- Add a small test `.mlmodel` that exercises the load/predict/unload cycle
+- Add a small redistributable test `.mlmodel` that exercises the load/predict/unload cycle in CI
+- Add process-level timeouts to model-loading regression tests
 
 ### 12. Support non-MLMultiArray I/O
 
