@@ -35,4 +35,6 @@ jobs:
       - name: Tests without local model fixtures
         if: ${{ !cancelled() }}
         timeout-minutes: 3
-        run: cargo test --locked
+        run: |
+          export DYLD_LIBRARY_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx:/usr/lib/swift${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+          cargo test --locked

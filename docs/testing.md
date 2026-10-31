@@ -14,6 +14,7 @@ From the repository root on macOS:
 cargo fmt --all -- --check
 cargo build --locked --all-targets
 cargo clippy --locked --all-targets
+export DYLD_LIBRARY_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx:/usr/lib/swift${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
 cargo test --locked
 ```
 
