@@ -1,26 +1,29 @@
 [package]
 name = "coreml-rs"
-version = "0.5.4"
+version = "2.0.0"
 edition = "2021"
-description = "CoreML bindings for Rust using swift-bridge to maximize performance"
+description = "Rust bindings for Core ML inference"
 license-file = "LICENSE"
+rust-version = "1.88"
+
+[features]
+ndarray = ["dep:ndarray"]
 
 [dependencies]
-anyhow = { version = "1", features = ["backtrace"] }
-bytemuck = "1.21.0"
-flate2 = "1.1.0"
-half = { version = "2.4.1", features = ["alloc", "serde", "zerocopy"] }
-ndarray = { version = "0.16.1", features = ["serde", "blas"] }
-num = "0.4.3"
-swift-bridge = "0.1"
-tempfile = "3.0"
-thiserror = "2.0.12"
-
-[build-dependencies]
-swift-bridge-build = "0.1"
+ndarray = { version = "0.16", optional = true }
+half = "2.4"
+block2 = "0.6"
+dispatch2 = { version = "0.3.1", features = ["block2"] }
+libc = "0.2"
+objc2 = "0.6.4"
+objc2-core-ml = { version = "0.3.2", default-features = false, features = ["std", "block2", "MLModel", "MLModelAsset", "MLModelError", "MLModel_MLModelCompilation", "MLModelConfiguration", "MLPredictionOptions", "MLModelDescription", "MLFeatureDescription", "MLImageConstraint", "MLFeatureType", "MLFeatureValue", "MLFeatureProvider", "MLDictionaryFeatureProvider", "MLMultiArray", "MLMultiArrayConstraint", "MLMultiArrayShapeConstraint", "MLMultiArrayShapeConstraintType", "objc2-core-video", "MLArrayBatchProvider", "MLBatchProvider", "MLModel_MLState", "MLState", "MLStateConstraint", "MLModel_MLComputeDevice", "MLComputeDeviceProtocol", "MLComputePlan", "MLComputePlanCost", "MLComputePlanDeviceUsage", "MLModelStructure", "MLModelStructureProgram", "MLModelStructureProgramFunction", "MLModelStructureProgramBlock", "MLModelStructureProgramOperation", "MLModelStructureProgramNamedValueType", "MLModelStructureNeuralNetwork", "MLModelStructureNeuralNetworkLayer", "MLModelStructurePipeline"] }
+objc2-core-foundation = "0.3.2"
+objc2-core-video = { version = "0.3.2", default-features = false, features = ["std", "objc2", "objc2-metal", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVMetalTexture", "CVMetalTextureCache", "CVReturn"] }
+objc2-metal = { version = "0.3.2", default-features = false, features = ["std", "MTLDevice", "MTLTexture"] }
+objc2-foundation = { version = "0.3.2", features = ["NSProcessInfo"] }
+tempfile = "3"
+thiserror = "2"
 
 [dev-dependencies]
-image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
-libproc = "0.14.4"
-sha2 = "0.10.9"
-zip = "2.6.1"
+futures-executor = "0.3"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

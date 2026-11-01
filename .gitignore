@@ -5,3 +5,5 @@
 model_cache
 
 .DS_Store
+
+/swift-library/
